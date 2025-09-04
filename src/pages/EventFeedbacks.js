@@ -17,21 +17,18 @@ import {
 } from "firebase/firestore";
 import Swal from "sweetalert2";
 
-/** Dev: show sample cards if Firestore is empty */
-const USE_SAMPLE_WHEN_EMPTY = true;
-
-/** Where per‑event questions live */
+/** Where per-event questions live (1 doc per event) */
 const EVENT_Q_COLLECTION = "event_questions";
 
 /* --------------------------- helpers --------------------------- */
 
 const average = (nums) => {
-  const vals = nums.map(Number).filter((n) => !Number.isNaN(n));
+  const vals = (Array.isArray(nums) ? nums : []).map(Number).filter((n) => !Number.isNaN(n));
   if (!vals.length) return 0;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 };
 
-// Simple heuristic sentiment until VADER writes fb.sentiment
+// Simple heuristic sentiment until you store fb.sentiment on write
 const deriveSentimentHeuristic = (fb) => {
   const text = (fb?.comment || "").toLowerCase();
   const spamWords = ["http://", "https://", "buy now", "promo", "free $$$", "visit my"];
@@ -59,9 +56,7 @@ const Pill = ({ active, onClick, children }) => (
     onClick={onClick}
     className={
       "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition " +
-      (active
-        ? "bg-blue-600 text-white shadow"
-        : "bg-white text-gray-700 hover:bg-gray-100 border")
+      (active ? "bg-blue-600 text-white shadow" : "bg-white text-gray-700 hover:bg-gray-100 border")
     }
   >
     {children}
@@ -106,7 +101,7 @@ const FeedbackCard = ({ fb, questions, onArchive }) => {
     : [Number(fb?.rating || 0)];
 
   const avg = Number(average(ratings).toFixed(2));
-  const rows = (questions && questions.length ? questions : []).map((q, idx) => ({
+  const rows = (Array.isArray(questions) ? questions : []).map((q, idx) => ({
     idx: idx + 1,
     q,
     val: Number(ratings[idx] ?? 0),
@@ -181,14 +176,15 @@ export default function EventFeedbacks() {
 
   const [eventName] = useState(location?.state?.eventName || "Event");
   const [feedbacks, setFeedbacks] = useState([]);
-  const [questions, setQuestions] = useState([]); // per‑event questions
+  const [questions, setQuestions] = useState([]); // per-event questions
+  const [questionsLoaded, setQuestionsLoaded] = useState(false);
 
-  // 🔧 SINGLE state for the sentiment filter
+  // SINGLE state for the sentiment filter (synced to URL)
   const [active, setActive] = useState(
     new URLSearchParams(location.search).get("sentiment") || "all"
   );
 
-  // Load per‑event questions
+  // Load per-event questions (no fallbacks)
   useEffect(() => {
     if (!eventId) return;
 
@@ -202,32 +198,24 @@ export default function EventFeedbacks() {
         const snap = await getDocs(qRef);
         if (!snap.empty) {
           const data = snap.docs[0].data();
-          if (Array.isArray(data?.questions) && data.questions.length) {
+          if (Array.isArray(data?.questions)) {
             setQuestions(data.questions);
-            return;
+          } else {
+            setQuestions([]);
           }
+        } else {
+          setQuestions([]);
         }
       } catch (e) {
-        console.warn("Failed fetching event questions – falling back to sample.", e);
+        console.warn("Failed fetching event questions:", e);
+        setQuestions([]);
+      } finally {
+        setQuestionsLoaded(true);
       }
-
-      // Fallback sample questions
-      setQuestions([
-        "Overall, how satisfied were you with the event?",
-        "How helpful were the talks/workshops?",
-        "Rate the quality of speakers.",
-        "Was the schedule well-organized?",
-        "Rate venue comfort (seating, A/C, etc.).",
-        "Rate audio/visual quality.",
-        "How relevant was the content to you?",
-        "How helpful were the staff/ushers?",
-        "Rate the check‑in experience.",
-        "Would you recommend this event to others?",
-      ]);
     })();
   }, [eventId]);
 
-  // Live feedbacks for this event
+  // Live feedbacks for this event (no samples)
   useEffect(() => {
     if (!eventId) return;
     const qRef = query(
@@ -242,45 +230,10 @@ export default function EventFeedbacks() {
     return () => unsub();
   }, [eventId]);
 
-  // Sample feedbacks if empty
-  const withSample = useMemo(() => {
-    if (feedbacks.length > 0 || !USE_SAMPLE_WHEN_EMPTY) return feedbacks;
-
-    return [
-      {
-        id: "sample1",
-        userName: "Jane Student",
-        comment: "Loved the event! Speakers were amazing.",
-        ratings: [5, 5, 4, 5, 4, 5, 5, 4, 5, 5],
-        createdAt: new Date(),
-        sentiment: "positive",
-        eventId,
-      },
-      {
-        id: "sample2",
-        userEmail: "user@domain.com",
-        comment: "Audio issues, couldn't hear from the back.",
-        ratings: [2, 3, 2, 2, 2, 2, 2, 2, 2, 2],
-        createdAt: new Date(),
-        sentiment: "negative",
-        eventId,
-      },
-      {
-        id: "sample3",
-        anonymous: true,
-        comment: "Visit my site http://spam.example.com for free gifts",
-        ratings: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        createdAt: new Date(),
-        sentiment: "spam",
-        eventId,
-      },
-    ];
-  }, [feedbacks, eventId]);
-
   // Enrich for filter/stats
   const enriched = useMemo(
     () =>
-      withSample.map((fb) => {
+      feedbacks.map((fb) => {
         const ratings = Array.isArray(fb?.ratings) ? fb.ratings : [Number(fb?.rating || 0)];
         return {
           ...fb,
@@ -288,7 +241,7 @@ export default function EventFeedbacks() {
           _sentiment: fb?.sentiment || deriveSentimentHeuristic(fb),
         };
       }),
-    [withSample]
+    [feedbacks]
   );
 
   // Page-level average
@@ -345,6 +298,20 @@ export default function EventFeedbacks() {
     }
   };
 
+  const noQuestionsBanner =
+    questionsLoaded && questions.length === 0 ? (
+      <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-md mb-6">
+        No questions set for this event.{" "}
+        <button
+          className="underline font-medium"
+          onClick={() => navigate(`/admin/edit-questions/${eventId}`)}
+        >
+          Add questions
+        </button>{" "}
+        so ratings can be shown alongside comments.
+      </div>
+    ) : null;
+
   return (
     <div className="flex h-screen bg-gray-100 font-poppins">
       <Sidebar />
@@ -376,6 +343,8 @@ export default function EventFeedbacks() {
             {pageAvg} <span className="text-yellow-500">★</span>
           </span>
         </p>
+
+        {noQuestionsBanner}
 
         {/* Filters with visible counters */}
         <div className="flex flex-wrap gap-3 mb-6">
@@ -410,10 +379,6 @@ export default function EventFeedbacks() {
             ))}
           </div>
         )}
-
-        <p className="text-xs text-gray-400 mt-6">
-          NOTE: VADER not integrated yet. Questions load from <code>{EVENT_Q_COLLECTION}</code>.
-        </p>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+// src/App.js
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -8,6 +9,7 @@ import EventFeedbacks from "./pages/EventFeedbacks";
 import ArchivedFeedbacks from "./pages/ArchivedFeedbacks";
 import EditQuestions from "./pages/EditQuestions";
 import EventAnalytics from "./pages/EventAnalytics";
+import AddNotifications from "./pages/AddNotifications"; // ← NEW
 
 function App() {
   return (
@@ -28,6 +30,7 @@ function App() {
         <Route path="/admin/archived-feedbacks/:eventId" element={<ArchivedFeedbacks />} />
         <Route path="/admin/edit-questions/:eventId" element={<EditQuestions />} />
         <Route path="/admin/event-analytics/:eventId" element={<EventAnalytics />} />
+        <Route path="/admin/notifications" element={<AddNotifications />} /> {/* ← NEW */}
 
         {/* Fallback → Login */}
         <Route path="*" element={<Navigate to="/login" replace />} />

@@ -1,166 +1,306 @@
-import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import { db } from "../firebase/firebaseConfig";
 import {
-  collection,
-  addDoc,
-  deleteDoc,
   doc,
   onSnapshot,
-  query,
-  where,
+  setDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import Swal from "sweetalert2";
 
-function EditQuestions() {
+const MAX_RATED = 10;
+
+export default function EditQuestions() {
   const { eventId } = useParams();
-  const [questions, setQuestions] = useState([]);
-  const [newQuestion, setNewQuestion] = useState("");
+  const navigate = useNavigate();
 
-  // Fetch questions for this event
+  const [loading, setLoading] = useState(true);
+  const [rated, setRated] = useState([]);       // array of strings (max 10)
+  const [openEnded, setOpenEnded] = useState([]); // array of strings
+  const [newRated, setNewRated] = useState("");
+  const [newOpen, setNewOpen] = useState("");
+
+  const docRef = useMemo(
+    () => (eventId ? doc(db, "event_questions", eventId) : null),
+    [eventId]
+  );
+
+  // Load live
   useEffect(() => {
-    if (!eventId) return;
-    const q = query(
-      collection(db, "questions"),
-      where("eventId", "==", eventId)
+    if (!docRef) return;
+    const unsub = onSnapshot(
+      docRef,
+      (snap) => {
+        const data = snap.exists() ? snap.data() : {};
+        setRated(Array.isArray(data.questions) ? data.questions : []);
+        setOpenEnded(Array.isArray(data.openEnded) ? data.openEnded : []);
+        setLoading(false);
+      },
+      () => setLoading(false)
     );
-    const unsub = onSnapshot(q, (snap) => {
-      setQuestions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
     return () => unsub();
-  }, [eventId]);
+  }, [docRef]);
 
-  // Add new question
-  const handleAdd = async (e) => {
-    e.preventDefault();
-    if (!newQuestion.trim()) return;
-
-    try {
-      await addDoc(collection(db, "questions"), {
-        eventId,
-        text: newQuestion.trim(),
-        createdAt: new Date(),
-      });
-
-      setNewQuestion("");
-      Swal.fire({
-        icon: "success",
-        title: "Added",
-        text: "New question added successfully",
-        timer: 1500,
-        showConfirmButton: false,
-      });
-    } catch (err) {
-      console.error(err);
-      Swal.fire("Error", "Failed to add question", "error");
-    }
+  /* -------------------------- helpers -------------------------- */
+  const move = (arr, from, to) => {
+    const next = [...arr];
+    const item = next.splice(from, 1)[0];
+    next.splice(to, 0, item);
+    return next;
   };
 
-  // Delete question
-  const handleDelete = async (id) => {
-    const confirm = await Swal.fire({
-      title: "Delete this question?",
-      text: "This cannot be undone",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#e74c3c",
-      cancelButtonColor: "#3085d6",
-      confirmButtonText: "Yes, delete it",
-    });
-    if (!confirm.isConfirmed) return;
+  const addRated = () => {
+    const q = newRated.trim();
+    if (!q) return;
+    if (rated.length >= MAX_RATED) {
+      Swal.fire("Limit reached", `Rated questions are limited to ${MAX_RATED}.`, "info");
+      return;
+    }
+    setRated((s) => [...s, q]);
+    setNewRated("");
+  };
 
+  const addOpen = () => {
+    const q = newOpen.trim();
+    if (!q) return;
+    setOpenEnded((s) => [...s, q]);
+    setNewOpen("");
+  };
+
+  const saveAll = async () => {
+    if (!eventId || !docRef) return;
     try {
-      await deleteDoc(doc(db, "questions", id));
-      Swal.fire({
-        icon: "success",
-        title: "Deleted",
-        timer: 1200,
-        showConfirmButton: false,
-      });
-    } catch (err) {
-      console.error(err);
-      Swal.fire("Error", "Failed to delete question", "error");
+      await setDoc(
+        docRef,
+        {
+          eventId,
+          questions: rated.map((s) => String(s).trim()).filter(Boolean).slice(0, MAX_RATED),
+          openEnded: openEnded.map((s) => String(s).trim()).filter(Boolean),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      Swal.fire({ icon: "success", title: "Saved", timer: 1200, showConfirmButton: false });
+    } catch (e) {
+      Swal.fire("Error", e?.message || "Failed to save questions.", "error");
     }
   };
 
   return (
     <div className="flex h-screen bg-gray-100 font-poppins">
-      {/* Sidebar */}
       <Sidebar />
 
-      {/* Main */}
-      <div className="flex-1 p-10 overflow-y-auto">
-        {/* Header */}
-        <h1 className="text-3xl font-semibold text-gray-800 mb-8">
-          Edit Questions
-        </h1>
-
-        {/* Add New Question */}
-        <form
-          onSubmit={handleAdd}
-          className="bg-white shadow-md rounded-xl p-6 mb-8 flex gap-4"
-        >
-          <input
-            type="text"
-            placeholder="Enter a new question..."
-            value={newQuestion}
-            onChange={(e) => setNewQuestion(e.target.value)}
-            className="flex-1 px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
-          />
+      <div className="flex-1 p-8 overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-semibold text-gray-800">
+            Edit Questions
+          </h1>
           <button
-            type="submit"
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md transition"
+            onClick={() => navigate(-1)}
+            className="px-4 py-2 rounded-md border bg-white text-gray-700 hover:bg-gray-100"
           >
-            Add
+            Back
           </button>
-        </form>
+        </div>
 
-        {/* Questions List */}
-        <div className="bg-white shadow-lg rounded-xl overflow-hidden">
-          <table className="min-w-full text-left text-gray-700">
-            <thead className="bg-blue-600 text-white">
-              <tr>
-                <th className="px-6 py-3 text-sm font-medium">Question</th>
-                <th className="px-6 py-3 text-sm font-medium text-center">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {questions.length ? (
-                questions.map((q) => (
-                  <tr
-                    key={q.id}
-                    className="border-b hover:bg-gray-50 transition"
-                  >
-                    <td className="px-6 py-4">{q.text}</td>
-                    <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={() => handleDelete(q.id)}
-                        className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan="2"
-                    className="px-6 py-10 text-center text-gray-500"
-                  >
-                    No questions yet. Add one above!
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        {loading ? (
+          <div className="bg-white rounded-xl shadow p-8 text-center text-gray-500">
+            Loading…
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Rated questions (1–10) */}
+            <div className="bg-white rounded-xl shadow p-6">
+              <div className="flex items-end justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-800">Rated Questions</h2>
+                  <p className="text-sm text-gray-500">
+                    These appear with 1–5 stars. Limit: {MAX_RATED}.
+                  </p>
+                </div>
+                <span className="text-sm text-gray-600">
+                  {rated.length}/{MAX_RATED}
+                </span>
+              </div>
+
+              {/* Add new rated */}
+              <div className="mt-4 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Add rated question…"
+                  value={newRated}
+                  onChange={(e) => setNewRated(e.target.value)}
+                  className="flex-1 px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={addRated}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
+                >
+                  Add
+                </button>
+              </div>
+
+              {/* List rated */}
+              <ul className="mt-5 space-y-3">
+                {rated.length ? (
+                  rated.map((q, idx) => (
+                    <li
+                      key={idx}
+                      className="border rounded-md p-3 flex items-center gap-3"
+                    >
+                      <span className="text-gray-500 w-6 text-right">{idx + 1}.</span>
+                      <input
+                        type="text"
+                        value={q}
+                        onChange={(e) =>
+                          setRated((s) => {
+                            const next = [...s];
+                            next[idx] = e.target.value;
+                            return next;
+                          })
+                        }
+                        className="flex-1 px-2 py-1 border rounded-md focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={idx === 0}
+                          onClick={() => setRated((s) => move(s, idx, idx - 1))}
+                          className={`px-2 py-1 rounded-md border ${
+                            idx === 0 ? "opacity-40" : "hover:bg-gray-50"
+                          }`}
+                          title="Move up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          disabled={idx === rated.length - 1}
+                          onClick={() => setRated((s) => move(s, idx, idx + 1))}
+                          className={`px-2 py-1 rounded-md border ${
+                            idx === rated.length - 1 ? "opacity-40" : "hover:bg-gray-50"
+                          }`}
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          onClick={() =>
+                            setRated((s) => s.filter((_, i) => i !== idx))
+                          }
+                          className="px-2 py-1 rounded-md border text-red-600 hover:bg-red-50"
+                          title="Delete"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-gray-500 text-sm">No rated questions yet.</li>
+                )}
+              </ul>
+            </div>
+
+            {/* Open-ended questions */}
+            <div className="bg-white rounded-xl shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-800">Open-Ended Questions</h2>
+              <p className="text-sm text-gray-500">
+                Students will answer these in text boxes. Add as many as you need.
+              </p>
+
+              {/* Add new open-ended */}
+              <div className="mt-4 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Add open-ended question…"
+                  value={newOpen}
+                  onChange={(e) => setNewOpen(e.target.value)}
+                  className="flex-1 px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={addOpen}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
+                >
+                  Add
+                </button>
+              </div>
+
+              {/* List open-ended */}
+              <ul className="mt-5 space-y-3">
+                {openEnded.length ? (
+                  openEnded.map((q, idx) => (
+                    <li
+                      key={idx}
+                      className="border rounded-md p-3 flex items-center gap-3"
+                    >
+                      <span className="text-gray-500 w-6 text-right">{idx + 1}.</span>
+                      <input
+                        type="text"
+                        value={q}
+                        onChange={(e) =>
+                          setOpenEnded((s) => {
+                            const next = [...s];
+                            next[idx] = e.target.value;
+                            return next;
+                          })
+                        }
+                        className="flex-1 px-2 py-1 border rounded-md focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={idx === 0}
+                          onClick={() => setOpenEnded((s) => move(s, idx, idx - 1))}
+                          className={`px-2 py-1 rounded-md border ${
+                            idx === 0 ? "opacity-40" : "hover:bg-gray-50"
+                          }`}
+                          title="Move up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          disabled={idx === openEnded.length - 1}
+                          onClick={() => setOpenEnded((s) => move(s, idx, idx + 1))}
+                          className={`px-2 py-1 rounded-md border ${
+                            idx === openEnded.length - 1 ? "opacity-40" : "hover:bg-gray-50"
+                          }`}
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          onClick={() =>
+                            setOpenEnded((s) => s.filter((_, i) => i !== idx))
+                          }
+                          className="px-2 py-1 rounded-md border text-red-600 hover:bg-red-50"
+                          title="Delete"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-gray-500 text-sm">No open-ended questions yet.</li>
+                )}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Save bar */}
+        <div className="mt-8 flex items-center gap-3">
+          <button
+            onClick={saveAll}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md"
+          >
+            Save Changes
+          </button>
+          <span className="text-sm text-gray-500">
+            This saves rated + open-ended questions for this event.
+          </span>
         </div>
       </div>
     </div>
   );
 }
-
-export default EditQuestions;

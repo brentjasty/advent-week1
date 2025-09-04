@@ -1,0 +1,83 @@
+[debug] [2025-09-04T19:02:08.473Z] ----------------------------------------------------------------------
+[debug] [2025-09-04T19:02:08.474Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\User\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js init functions
+[debug] [2025-09-04T19:02:08.475Z] CLI Version:   14.15.2
+[debug] [2025-09-04T19:02:08.475Z] Platform:      win32
+[debug] [2025-09-04T19:02:08.475Z] Node Version:  v22.19.0
+[debug] [2025-09-04T19:02:08.475Z] Time:          Fri Sep 05 2025 03:02:08 GMT+0800 (Philippine Standard Time)
+[debug] [2025-09-04T19:02:08.475Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-09-04T19:02:08.580Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-04T19:02:08.581Z] > authorizing via signed-in user (arda.brentjasty@gmail.com)
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  C:\Users\User\Desktop\ADVENT\advent-week1
+
+Before we get started, keep in mind:
+
+  * You are initializing within an existing Firebase project directory
+
+[info] 
+=== Project Setup
+[info] 
+[info] First, let's associate this project directory with a Firebase project.
+[info] You can create multiple project aliases by running firebase use --add, 
+[info] but for now we'll just set up a default project.
+[info] 
+[debug] [2025-09-04T19:02:15.976Z] Using project from CLI flag: advent-b3755
+[debug] [2025-09-04T19:02:15.977Z] Checked if tokens are valid: false, expires at: 1757013377806
+[debug] [2025-09-04T19:02:15.977Z] Checked if tokens are valid: false, expires at: 1757013377806
+[debug] [2025-09-04T19:02:15.977Z] > refreshing access token with scopes: []
+[debug] [2025-09-04T19:02:15.978Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-04T19:02:15.978Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-04T19:02:16.128Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-04T19:02:16.128Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-04T19:02:16.136Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/advent-b3755 [none]
+[debug] [2025-09-04T19:02:16.483Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/advent-b3755 200
+[debug] [2025-09-04T19:02:16.484Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/advent-b3755 {"projectId":"advent-b3755","projectNumber":"504527654278","displayName":"advent","name":"projects/advent-b3755","resources":{"hostingSite":"advent-b3755"},"state":"ACTIVE","etag":"1_24453ae5-82de-4adc-89e1-f5a30f0c3045"}
+[info] i  Using project advent-b3755 (advent) 
+[info] 
+=== Functions Setup
+[debug] [2025-09-04T19:02:16.594Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-04T19:02:16.594Z] > authorizing via signed-in user (arda.brentjasty@gmail.com)
+[debug] [2025-09-04T19:02:16.594Z] [iam] checking project advent-b3755 for permissions ["firebase.projects.get"]
+[debug] [2025-09-04T19:02:16.595Z] Checked if tokens are valid: true, expires at: 1757016135129
+[debug] [2025-09-04T19:02:16.595Z] Checked if tokens are valid: true, expires at: 1757016135129
+[debug] [2025-09-04T19:02:16.595Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/advent-b3755:testIamPermissions [none]
+[debug] [2025-09-04T19:02:16.595Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/advent-b3755:testIamPermissions x-goog-quota-user=projects/advent-b3755
+[debug] [2025-09-04T19:02:16.595Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/advent-b3755:testIamPermissions {"permissions":["firebase.projects.get"]}
+[debug] [2025-09-04T19:02:17.543Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/advent-b3755:testIamPermissions 200
+[debug] [2025-09-04T19:02:17.543Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/advent-b3755:testIamPermissions {"permissions":["firebase.projects.get"]}
+[info] 
+Detected existing codebase(s): default
+
+[info] Let's create a new codebase for your functions.
+[info] A directory corresponding to the codebase will be created in your project
+[info] with sample code pre-configured.
+
+[info] See https://firebase.google.com/docs/functions/organize-functions for
+[info] more information on organizing your functions using codebases.
+
+[info] Functions can be deployed with firebase deploy.
+
+[error] Invalid codebase name. Codebase must be less than 64 characters and can contain only lowercase letters, numeric characters, underscores, and dashes.
+[error] Invalid codebase name. Codebase must be less than 64 characters and can contain only lowercase letters, numeric characters, underscores, and dashes.
+[debug] [2025-09-04T19:04:43.519Z] ExitPromptError: User force closed the prompt with SIGINT
+    at Interface.sigint (C:\Users\User\AppData\Roaming\npm\node_modules\firebase-tools\node_modules\@inquirer\core\dist\commonjs\lib\create-prompt.js:101:37)
+    at Interface.emit (node:events:519:28)
+    at Interface.emit (node:domain:489:12)
+    at [_ttyWrite] [as _ttyWrite] (node:internal/readline/interface:1132:18)
+    at ReadStream.onkeypress (node:internal/readline/interface:271:20)
+    at ReadStream.emit (node:events:531:35)
+    at ReadStream.emit (node:domain:489:12)
+    at emitKeys (node:internal/readline/utils:370:14)
+    at emitKeys.next (<anonymous>)
+    at ReadStream.onData (node:internal/readline/emitKeypressEvents:64:36)
+[error] 
+[error] Error: An unexpected error has occurred.
