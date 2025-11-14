@@ -12,11 +12,18 @@ function Sidebar() {
   const navigate = useNavigate();
 
   return (
-    <div className="w-64 h-screen bg-sidebar text-white flex flex-col">
+    <div className="w-64 h-screen bg-[#1c2239] text-white flex flex-col">
       {/* Logo Section */}
       <div className="flex flex-col items-center mt-12 mb-6">
-        <img src={logo} alt="Logo" className="w-41 h-41 mb-4" />
-        <h2 className="text-4xl font-bold uppercase font-cinzel tracking-wide">
+        <img
+          src={logo}
+          alt="Logo"
+          className="w-32 h-32 mb-4"
+          style={{
+            filter: "sepia(1) saturate(5) hue-rotate(10deg) brightness(1.5)",
+          }}
+        />
+        <h2 className="text-4xl font-bold uppercase font-cinzel tracking-wide text-yellow-400">
           ADVENT
         </h2>
       </div>
@@ -27,7 +34,14 @@ function Sidebar() {
           className="flex items-center gap-3 px-6 py-3 cursor-pointer transition hover:bg-gray-700/50"
           onClick={() => navigate("/admin/dashboard")}
         >
-          <img src={dashboardIcon} alt="Dashboard" className="w-6 h-6" />
+          <img
+            src={dashboardIcon}
+            alt="Dashboard"
+            className="w-6 h-6"
+            style={{
+            
+            }}
+          />
           <span>Dashboard</span>
         </li>
 
@@ -35,7 +49,14 @@ function Sidebar() {
           className="flex items-center gap-3 px-6 py-3 cursor-pointer transition hover:bg-gray-700/50"
           onClick={() => navigate("/admin/manage-events")}
         >
-          <img src={manageEventsIcon} alt="Manage Events" className="w-6 h-6" />
+          <img
+            src={manageEventsIcon}
+            alt="Manage Events"
+            className="w-6 h-6"
+            style={{
+            
+            }}
+          />
           <span>Manage Events</span>
         </li>
 
@@ -43,7 +64,14 @@ function Sidebar() {
           className="flex items-center gap-3 px-6 py-3 cursor-pointer transition hover:bg-gray-700/50"
           onClick={() => navigate("/admin/archived-events")}
         >
-          <img src={archiveIcon} alt="Archived Events" className="w-6 h-6" />
+          <img
+            src={archiveIcon}
+            alt="Archived Events"
+            className="w-6 h-6"
+            style={{
+            
+            }}
+          />
           <span>Archived Events</span>
         </li>
 
@@ -51,7 +79,14 @@ function Sidebar() {
           className="flex items-center gap-3 px-6 py-3 cursor-pointer transition hover:bg-gray-700/50"
           onClick={() => navigate("/admin/add-event")}
         >
-          <img src={addEventsIcon} alt="Add Event" className="w-6 h-6" />
+          <img
+            src={addEventsIcon}
+            alt="Add Event"
+            className="w-6 h-6"
+            style={{
+            
+            }}
+          />
           <span>Add Event</span>
         </li>
       </ul>
@@ -59,7 +94,7 @@ function Sidebar() {
       {/* Logout Button */}
       <div className="w-full p-6">
         <button
-          className="w-full bg-white text-black py-2 rounded-md font-bold hover:bg-gray-200 font-poppins"
+          className="w-full bg-yellow-400 text-black py-2 rounded-md font-bold hover:bg-yellow-500 font-poppins"
           onClick={() => navigate("/login")}
         >
           Logout

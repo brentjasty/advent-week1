@@ -1,192 +1,208 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import Sidebar from "../components/Sidebar";
 import { db } from "../firebase/firebaseConfig";
 import {
   collection,
   onSnapshot,
+  updateDoc,
+  doc,
   addDoc,
   deleteDoc,
-  doc,
-  getDocs,
-  writeBatch,
 } from "firebase/firestore";
-import Swal from "sweetalert2";
+import Sidebar from "../components/Sidebar";
+import { useNavigate } from "react-router-dom";
 
-export default function ManageEvents() {
-  const navigate = useNavigate();
+function ManageEvents() {
   const [events, setEvents] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [notification, setNotification] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "events"), (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      // optional: sort newest first
-      list.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
-      setEvents(list);
+    const unsubscribe = onSnapshot(collection(db, "events"), (snapshot) => {
+      const eventsData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setEvents(eventsData);
     });
-    return () => unsub();
+
+    return () => unsubscribe();
   }, []);
 
-  // Mark exactly one event as current
-  const handleMakeCurrent = async (id) => {
-    const confirm = await Swal.fire({
-      title: "Make this the current event?",
-      text: "This will unset any other current event.",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#1abc9c",
-      cancelButtonColor: "#3085d6",
-      confirmButtonText: "Yes, make current",
-    });
-    if (!confirm.isConfirmed) return;
+  // Toast
+  const showNotification = (message) => {
+    setNotification(message);
+    setTimeout(() => setNotification(null), 3000);
+  };
 
+  // Set Current Event
+  const handleSetCurrent = async (id) => {
     try {
-      const batch = writeBatch(db);
-
-      // Unset any existing current events (if any)
-      const all = await getDocs(collection(db, "events"));
-      all.forEach((d) => {
-        const ref = doc(db, "events", d.id);
-        batch.update(ref, { isCurrent: d.id === id });
-      });
-
-      await batch.commit();
-
-      Swal.fire({
-        icon: "success",
-        title: "Updated",
-        text: "Current event set successfully.",
-        timer: 1600,
-        showConfirmButton: false,
-      });
-    } catch (err) {
-      console.error(err);
-      Swal.fire("Error", "Failed to set current event", "error");
+      const promises = events.map((event) =>
+        updateDoc(doc(db, "events", event.id), { isCurrent: event.id === id })
+      );
+      await Promise.all(promises);
+      showNotification("Current event updated successfully!");
+    } catch (error) {
+      console.error("Error updating current event:", error);
     }
   };
 
-  const handleArchive = async (id, eventData) => {
-    const confirm = await Swal.fire({
-      title: "Archive this event?",
-      text: "This event will be moved to Archived Events.",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#1abc9c",
-      cancelButtonColor: "#3085d6",
-      confirmButtonText: "Yes, archive it!",
-    });
+  // Show archive modal
+  const handleArchiveClick = (event) => {
+    setSelectedEvent(event);
+    setShowModal(true);
+  };
 
-    if (!confirm.isConfirmed) return;
-
+  // Confirm archive
+  const confirmArchive = async () => {
+    if (!selectedEvent) return;
     try {
-      const batch = writeBatch(db);
-
-      // Add to archived_events
-      const archivedRef = doc(collection(db, "archived_events"));
-      batch.set(archivedRef, {
-        title: eventData.title,
-        location: eventData.location,
-        date: eventData.date,
-        createdAt: eventData.createdAt || new Date(),
-        wasCurrent: !!eventData.isCurrent,
+      await addDoc(collection(db, "archived_events"), {
+        title: selectedEvent.title,
+        location: selectedEvent.location,
+        date: selectedEvent.date,
+        createdAt: selectedEvent.createdAt || new Date(),
       });
 
-      // If it was current, make sure no event is left "current"
-      if (eventData.isCurrent) {
-        const all = await getDocs(collection(db, "events"));
-        all.forEach((d) => {
-          batch.update(doc(db, "events", d.id), { isCurrent: false });
-        });
-      }
+      await deleteDoc(doc(db, "events", selectedEvent.id));
 
-      // Delete from events
-      batch.delete(doc(db, "events", id));
-
-      await batch.commit();
-
-      Swal.fire({
-        icon: "success",
-        title: "Archived!",
-        text: "Event moved to Archived Events.",
-        timer: 1800,
-        showConfirmButton: false,
-      });
+      setShowModal(false);
+      setSelectedEvent(null);
+      showNotification("Event archived successfully!");
     } catch (error) {
       console.error("Error archiving event:", error);
-      Swal.fire({
-        icon: "error",
-        title: "Failed to archive event",
-        timer: 1800,
-        showConfirmButton: false,
-      });
     }
+  };
+
+  // Edit Event
+  const handleEdit = (id) => {
+    navigate(`/admin/edit-event/${id}`);
+    showNotification("Redirecting to edit event...");
+  };
+
+  // Edit Questions
+  const handleEditQuestions = (id, title) => {
+    navigate(`/admin/edit-questions/${id}`, {
+      state: { eventName: title },
+    });
+  };
+
+  // ⭐ NEW: View Feedbacks
+  const handleViewFeedbacks = (id, title) => {
+    navigate(`/admin/event-feedbacks/${id}`, {
+      state: { eventName: title },
+    });
   };
 
   return (
     <div className="flex h-screen bg-gray-100 font-poppins">
       <Sidebar />
-      <div className="flex-1 p-10 overflow-y-auto">
-        <h2 className="text-3xl font-semibold text-gray-800 mb-8">Manage Events</h2>
 
-        <div className="bg-white shadow-lg rounded-xl overflow-hidden">
-          <table className="min-w-full text-left text-gray-700">
-            <thead className="bg-blue-600 text-white">
+      <div className="flex-1 p-10 overflow-y-auto relative">
+        <h2 className="text-3xl font-semibold text-gray-800 mb-8">
+          Manage Events
+        </h2>
+
+        {notification && (
+          <div className="fixed top-6 right-6 bg-gray-900 text-white px-5 py-3 rounded-lg shadow-lg text-sm font-medium animate-fade-in-out z-50">
+            {notification}
+          </div>
+        )}
+
+        <div className="bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-200">
+          <table className="min-w-full text-left">
+            <thead className="bg-gray-800 text-gray-100">
               <tr>
-                <th className="px-6 py-3 text-sm font-medium">Title</th>
-                <th className="px-6 py-3 text-sm font-medium">Location</th>
-                <th className="px-6 py-3 text-sm font-medium">Date</th>
-                <th className="px-6 py-3 text-sm font-medium">Current</th>
-                <th className="px-6 py-3 text-sm font-medium text-center">Actions</th>
+                <th className="px-6 py-3 text-sm font-semibold">Title</th>
+                <th className="px-6 py-3 text-sm font-semibold">Location</th>
+                <th className="px-6 py-3 text-sm font-semibold">Date</th>
+                <th className="px-6 py-3 text-sm font-semibold text-center">
+                  Current
+                </th>
+                <th className="px-6 py-3 text-sm font-semibold text-center">
+                  Actions
+                </th>
               </tr>
             </thead>
+
             <tbody>
-              {events.length ? (
-                events.map((ev) => (
-                  <tr key={ev.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="px-6 py-4">{ev.title}</td>
-                    <td className="px-6 py-4">{ev.location}</td>
-                    <td className="px-6 py-4">{ev.date}</td>
-                    <td className="px-6 py-4">{ev.isCurrent ? "Yes" : "No"}</td>
-                    <td className="px-6 py-4 flex gap-2 justify-center">
-                      <button
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md text-sm"
-                        onClick={() =>
-                          navigate(`/admin/event-feedbacks/${ev.id}`, {
-                            state: { eventName: ev.title },
-                          })
-                        }
-                      >
-                        View Feedbacks
-                      </button>
+              {events.length > 0 ? (
+                events.map((event) => (
+                  <tr
+                    key={event.id}
+                    className="border-b border-gray-200 hover:bg-gray-50 transition"
+                  >
+                    <td className="px-6 py-4 text-gray-800">{event.title}</td>
+                    <td className="px-6 py-4 text-gray-700">
+                      {event.location}
+                    </td>
+                    <td className="px-6 py-4 text-gray-700">{event.date}</td>
 
-                      <button
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-md text-sm"
-                        onClick={() => handleMakeCurrent(ev.id)}
-                        disabled={!!ev.isCurrent}
-                        title={ev.isCurrent ? "Already current" : "Make current"}
-                      >
-                        {ev.isCurrent ? "Current" : "Make Current"}
-                      </button>
+                    <td className="px-6 py-4 text-center">
+                      {event.isCurrent ? (
+                        <button
+                          disabled
+                          className="bg-yellow-400 text-gray-900 px-3 py-1 rounded-md text-sm font-medium opacity-90 cursor-default"
+                        >
+                          CURRENT
+                        </button>
+                      ) : (
+                        <button
+                          className="bg-gray-700 hover:bg-gray-900 text-white px-3 py-1 rounded-md text-sm transition"
+                          onClick={() => handleSetCurrent(event.id)}
+                        >
+                          Set Current
+                        </button>
+                      )}
+                    </td>
 
-                      <button
-                        className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded-md text-sm"
-                        onClick={() => handleArchive(ev.id, ev)}
-                      >
-                        Archive
-                      </button>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-center gap-2">
 
-                      <button
-                        className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-md text-sm"
-                        onClick={() => navigate(`/admin/edit-questions/${ev.id}`)}
-                      >
-                        Edit Questions
-                      </button>
+                        <button
+                          className="bg-gray-700 hover:bg-gray-900 text-white px-3 py-1 rounded-md text-sm transition"
+                          onClick={() => handleEdit(event.id)}
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          className="bg-gray-700 hover:bg-gray-900 text-white px-3 py-1 rounded-md text-sm transition"
+                          onClick={() =>
+                            handleEditQuestions(event.id, event.title)
+                          }
+                        >
+                          Edit Questions
+                        </button>
+
+                        {/* ⭐ NEW: View Feedbacks */}
+                        <button
+                          className="bg-gray-700 hover:bg-gray-900 text-white px-3 py-1 rounded-md text-sm transition"
+                          onClick={() =>
+                            handleViewFeedbacks(event.id, event.title)
+                          }
+                        >
+                          View Feedbacks
+                        </button>
+
+                        <button
+                          className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 px-3 py-1 rounded-md text-sm transition font-medium"
+                          onClick={() => handleArchiveClick(event)}
+                        >
+                          Archive
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                  <td
+                    colSpan="5"
+                    className="px-6 py-8 text-center text-gray-500 bg-white"
+                  >
                     No events available.
                   </td>
                 </tr>
@@ -195,6 +211,42 @@ export default function ManageEvents() {
           </table>
         </div>
       </div>
+
+      {showModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 backdrop-blur-sm z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-96 p-6 text-center transform transition-all">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4">
+              Archive Event
+            </h3>
+
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to archive{" "}
+              <span className="font-medium text-gray-900">
+                “{selectedEvent?.title}”
+              </span>
+              ?
+            </p>
+
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={confirmArchive}
+                className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium px-4 py-2 rounded-md transition"
+              >
+                Yes, Archive
+              </button>
+
+              <button
+                onClick={() => setShowModal(false)}
+                className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium px-4 py-2 rounded-md transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+export default ManageEvents;

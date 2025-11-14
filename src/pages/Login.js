@@ -62,7 +62,7 @@ function Login() {
         toast: true,
         position: "top-end",
         icon: "error",
-        title: `Login Failed: ${error.message}`,
+        title: `Login Failed: ${error.message}`, // ✅ Fixed
         showConfirmButton: false,
         timer: 3000,
       });
@@ -79,7 +79,11 @@ function Login() {
             <img
               src={userIcon}
               alt="ID Icon"
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 opacity-70"
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5"
+              style={{
+                filter:
+                  "invert(74%) sepia(93%) saturate(747%) hue-rotate(1deg) brightness(103%) contrast(102%)",
+              }}
             />
             <input
               type="text"
@@ -87,7 +91,7 @@ function Login() {
               value={idNumber}
               onChange={(e) => setIdNumber(e.target.value)}
               required
-              className="w-full pl-10 p-3 rounded-md border border-gray-300 focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 p-3 rounded-md border border-gray-300 focus:ring-2 focus:ring-yellow-400 bg-transparent text-white placeholder-white"
             />
           </div>
 
@@ -96,7 +100,11 @@ function Login() {
             <img
               src={passwordIcon}
               alt="Password Icon"
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 opacity-70"
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5"
+              style={{
+                filter:
+                  "invert(74%) sepia(93%) saturate(747%) hue-rotate(1deg) brightness(103%) contrast(102%)",
+              }}
             />
             <input
               type="password"
@@ -104,14 +112,14 @@ function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full pl-10 p-3 rounded-md border border-gray-300 focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 p-3 rounded-md border border-gray-300 focus:ring-2 focus:ring-yellow-400 bg-transparent text-white placeholder-white"
             />
           </div>
 
           {/* Login Button */}
           <button
             type="submit"
-            className="w-full bg-yellow-400 text-black font-bold py-3 rounded-md hover:bg-yellow-500 transition"
+            className="w-full bg-yellow-400 text- font-bold py-3 rounded-md hover:bg-yellow-500 transition"
           >
             Login
           </button>
@@ -119,17 +127,25 @@ function Login() {
       </div>
 
       {/* Right: Branding (70%) */}
-      <div className="w-[70%] bg-[#0d1736] flex flex-col items-center justify-center text-[#55aaff]">
-        {/* Bigger Logo */}
-        <img src={logo} alt="ADVENT Logo" className="w-48 mb-0" />
+      <div className="w-[70%] bg-[#0d1736] flex flex-col items-center justify-center">
+        {/* Logo with yellow tint filter */}
+        <img
+          src={logo}
+          alt="ADVENT Logo"
+          className="w-48 mb-0"
+          style={{
+            filter: "sepia(1) saturate(5) hue-rotate(10deg) brightness(1.5)",
+          }}
+        />
 
-        {/* Brand Name */}
-        <h1 className="text-7xl font-bold font-cinzel">ADVENT</h1>
+        {/* Brand Name in white */}
+        <h1 className="text-7xl font-bold font-cinzel text-white">ADVENT</h1>
 
-        {/* Shorter Line Under Brand */}
-        <hr className="border-[#55aaff] w-1/3 my-1" />
+        {/* Short Line Under Brand */}
+        <hr className="border-yellow-400 w-1/3 my-1" />
 
-        <p className="uppercase tracking-wide text-center mt-2">
+        {/* Tagline in white */}
+        <p className="uppercase tracking-wide text-center mt-2 text-white">
           Your Presence and Voice Matters
         </p>
       </div>

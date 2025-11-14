@@ -7,8 +7,8 @@ import {
   onSnapshot,
   setDoc,
   serverTimestamp,
+  getDoc,
 } from "firebase/firestore";
-import Swal from "sweetalert2";
 
 const MAX_RATED = 10;
 
@@ -17,19 +17,39 @@ export default function EditQuestions() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
-  const [rated, setRated] = useState([]);       // array of strings (max 10)
-  const [openEnded, setOpenEnded] = useState([]); // array of strings
+  const [rated, setRated] = useState([]);
+  const [openEnded, setOpenEnded] = useState([]);
+  const [eventName, setEventName] = useState("");
+  const [eventDate, setEventDate] = useState("");
+
   const [newRated, setNewRated] = useState("");
   const [newOpen, setNewOpen] = useState("");
 
-  const docRef = useMemo(
-    () => (eventId ? doc(db, "event_questions", eventId) : null),
-    [eventId]
-  );
+  // ⭐ NEW — success modal state
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  // Load live
+  const docRef = useMemo(() => {
+    return eventId ? doc(db, "event_questions", eventId) : null;
+  }, [eventId]);
+
+  /* ---------------------- Load Event Info ---------------------- */
+  useEffect(() => {
+    if (!eventId) return;
+
+    const eventRef = doc(db, "events", eventId);
+    getDoc(eventRef).then((snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setEventName(data.title || "Event");
+        setEventDate(data.date || "N/A");
+      }
+    });
+  }, [eventId]);
+
+  /* ---------------------- Live Load Questions ---------------------- */
   useEffect(() => {
     if (!docRef) return;
+
     const unsub = onSnapshot(
       docRef,
       (snap) => {
@@ -43,7 +63,7 @@ export default function EditQuestions() {
     return () => unsub();
   }, [docRef]);
 
-  /* -------------------------- helpers -------------------------- */
+  /* -------------------------- Helpers -------------------------- */
   const move = (arr, from, to) => {
     const next = [...arr];
     const item = next.splice(from, 1)[0];
@@ -52,39 +72,45 @@ export default function EditQuestions() {
   };
 
   const addRated = () => {
-    const q = newRated.trim();
-    if (!q) return;
+    if (!newRated.trim()) return;
     if (rated.length >= MAX_RATED) {
-      Swal.fire("Limit reached", `Rated questions are limited to ${MAX_RATED}.`, "info");
+      alert(`Rated questions limited to ${MAX_RATED}.`);
       return;
     }
-    setRated((s) => [...s, q]);
+    setRated((s) => [...s, newRated.trim()]);
     setNewRated("");
   };
 
   const addOpen = () => {
-    const q = newOpen.trim();
-    if (!q) return;
-    setOpenEnded((s) => [...s, q]);
+    if (!newOpen.trim()) return;
+    setOpenEnded((s) => [...s, newOpen.trim()]);
     setNewOpen("");
   };
 
+  /* -------------------------- Save -------------------------- */
   const saveAll = async () => {
     if (!eventId || !docRef) return;
+
     try {
       await setDoc(
         docRef,
         {
           eventId,
-          questions: rated.map((s) => String(s).trim()).filter(Boolean).slice(0, MAX_RATED),
-          openEnded: openEnded.map((s) => String(s).trim()).filter(Boolean),
+          eventTitle: eventName,
+          eventDate,
+          questions: rated.slice(0, MAX_RATED),
+          openEnded,
+          feedbackCount: 0,
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
-      Swal.fire({ icon: "success", title: "Saved", timer: 1200, showConfirmButton: false });
+
+      // ⭐ Show custom modal instead of SweetAlert
+      setShowSuccessModal(true);
+
     } catch (e) {
-      Swal.fire("Error", e?.message || "Failed to save questions.", "error");
+      alert("Save failed: " + e.message);
     }
   };
 
@@ -94,9 +120,13 @@ export default function EditQuestions() {
 
       <div className="flex-1 p-8 overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-semibold text-gray-800">
-            Edit Questions
-          </h1>
+          <div>
+            <h1 className="text-3xl font-semibold text-gray-800">
+              Edit Questions — {eventName}
+            </h1>
+            <p className="text-gray-500 text-sm">{eventDate}</p>
+          </div>
+
           <button
             onClick={() => navigate(-1)}
             className="px-4 py-2 rounded-md border bg-white text-gray-700 hover:bg-gray-100"
@@ -111,11 +141,13 @@ export default function EditQuestions() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Rated questions (1–10) */}
+            {/* Rated Questions */}
             <div className="bg-white rounded-xl shadow p-6">
               <div className="flex items-end justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-800">Rated Questions</h2>
+                  <h2 className="text-xl font-semibold text-gray-800">
+                    Rated Questions
+                  </h2>
                   <p className="text-sm text-gray-500">
                     These appear with 1–5 stars. Limit: {MAX_RATED}.
                   </p>
@@ -125,14 +157,13 @@ export default function EditQuestions() {
                 </span>
               </div>
 
-              {/* Add new rated */}
               <div className="mt-4 flex gap-2">
                 <input
                   type="text"
-                  placeholder="Add rated question…"
                   value={newRated}
                   onChange={(e) => setNewRated(e.target.value)}
-                  className="flex-1 px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  placeholder="Add rated question…"
+                  className="flex-1 px-3 py-2 border rounded-md"
                 />
                 <button
                   onClick={addRated}
@@ -142,81 +173,64 @@ export default function EditQuestions() {
                 </button>
               </div>
 
-              {/* List rated */}
               <ul className="mt-5 space-y-3">
-                {rated.length ? (
-                  rated.map((q, idx) => (
-                    <li
-                      key={idx}
-                      className="border rounded-md p-3 flex items-center gap-3"
-                    >
-                      <span className="text-gray-500 w-6 text-right">{idx + 1}.</span>
-                      <input
-                        type="text"
-                        value={q}
-                        onChange={(e) =>
-                          setRated((s) => {
-                            const next = [...s];
-                            next[idx] = e.target.value;
-                            return next;
-                          })
-                        }
-                        className="flex-1 px-2 py-1 border rounded-md focus:ring-2 focus:ring-blue-500"
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          disabled={idx === 0}
-                          onClick={() => setRated((s) => move(s, idx, idx - 1))}
-                          className={`px-2 py-1 rounded-md border ${
-                            idx === 0 ? "opacity-40" : "hover:bg-gray-50"
-                          }`}
-                          title="Move up"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          disabled={idx === rated.length - 1}
-                          onClick={() => setRated((s) => move(s, idx, idx + 1))}
-                          className={`px-2 py-1 rounded-md border ${
-                            idx === rated.length - 1 ? "opacity-40" : "hover:bg-gray-50"
-                          }`}
-                          title="Move down"
-                        >
-                          ↓
-                        </button>
-                        <button
-                          onClick={() =>
-                            setRated((s) => s.filter((_, i) => i !== idx))
-                          }
-                          className="px-2 py-1 rounded-md border text-red-600 hover:bg-red-50"
-                          title="Delete"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </li>
-                  ))
-                ) : (
-                  <li className="text-gray-500 text-sm">No rated questions yet.</li>
-                )}
+                {rated.map((q, idx) => (
+                  <li key={idx} className="border rounded-md p-3 flex items-center gap-3">
+                    <span className="text-gray-500 w-6 text-right">{idx + 1}.</span>
+
+                    <input
+                      type="text"
+                      value={q}
+                      onChange={(e) =>
+                        setRated((s) => {
+                          const next = [...s];
+                          next[idx] = e.target.value;
+                          return next;
+                        })
+                      }
+                      className="flex-1 px-2 py-1 border rounded-md"
+                    />
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        disabled={idx === 0}
+                        onClick={() => setRated((s) => move(s, idx, idx - 1))}
+                        className="px-2 py-1 rounded-md border"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        disabled={idx === rated.length - 1}
+                        onClick={() => setRated((s) => move(s, idx, idx + 1))}
+                        className="px-2 py-1 rounded-md border"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        onClick={() => setRated((s) => s.filter((_, i) => i !== idx))}
+                        className="px-2 py-1 rounded-md border text-red-600"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
               </ul>
             </div>
 
-            {/* Open-ended questions */}
+            {/* Open-ended */}
             <div className="bg-white rounded-xl shadow p-6">
-              <h2 className="text-xl font-semibold text-gray-800">Open-Ended Questions</h2>
-              <p className="text-sm text-gray-500">
-                Students will answer these in text boxes. Add as many as you need.
-              </p>
+              <h2 className="text-xl font-semibold text-gray-800">
+                Open-Ended Questions
+              </h2>
 
-              {/* Add new open-ended */}
               <div className="mt-4 flex gap-2">
                 <input
                   type="text"
-                  placeholder="Add open-ended question…"
                   value={newOpen}
                   onChange={(e) => setNewOpen(e.target.value)}
-                  className="flex-1 px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  placeholder="Add open-ended question…"
+                  className="flex-1 px-3 py-2 border rounded-md"
                 />
                 <button
                   onClick={addOpen}
@@ -226,81 +240,87 @@ export default function EditQuestions() {
                 </button>
               </div>
 
-              {/* List open-ended */}
               <ul className="mt-5 space-y-3">
-                {openEnded.length ? (
-                  openEnded.map((q, idx) => (
-                    <li
-                      key={idx}
-                      className="border rounded-md p-3 flex items-center gap-3"
-                    >
-                      <span className="text-gray-500 w-6 text-right">{idx + 1}.</span>
-                      <input
-                        type="text"
-                        value={q}
-                        onChange={(e) =>
-                          setOpenEnded((s) => {
-                            const next = [...s];
-                            next[idx] = e.target.value;
-                            return next;
-                          })
+                {openEnded.map((q, idx) => (
+                  <li key={idx} className="border rounded-md p-3 flex items-center gap-3">
+                    <span className="text-gray-500 w-6 text-right">{idx + 1}.</span>
+
+                    <input
+                      type="text"
+                      value={q}
+                      onChange={(e) =>
+                        setOpenEnded((s) => {
+                          const next = [...s];
+                          next[idx] = e.target.value;
+                          return next;
+                        })
+                      }
+                      className="flex-1 px-2 py-1 border rounded-md"
+                    />
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        disabled={idx === 0}
+                        onClick={() => setOpenEnded((s) => move(s, idx, idx - 1))}
+                        className="px-2 py-1 rounded-md border"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        disabled={idx === openEnded.length - 1}
+                        onClick={() => setOpenEnded((s) => move(s, idx, idx + 1))}
+                        className="px-2 py-1 rounded-md border"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        onClick={() =>
+                          setOpenEnded((s) => s.filter((_, i) => i !== idx))
                         }
-                        className="flex-1 px-2 py-1 border rounded-md focus:ring-2 focus:ring-blue-500"
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          disabled={idx === 0}
-                          onClick={() => setOpenEnded((s) => move(s, idx, idx - 1))}
-                          className={`px-2 py-1 rounded-md border ${
-                            idx === 0 ? "opacity-40" : "hover:bg-gray-50"
-                          }`}
-                          title="Move up"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          disabled={idx === openEnded.length - 1}
-                          onClick={() => setOpenEnded((s) => move(s, idx, idx + 1))}
-                          className={`px-2 py-1 rounded-md border ${
-                            idx === openEnded.length - 1 ? "opacity-40" : "hover:bg-gray-50"
-                          }`}
-                          title="Move down"
-                        >
-                          ↓
-                        </button>
-                        <button
-                          onClick={() =>
-                            setOpenEnded((s) => s.filter((_, i) => i !== idx))
-                          }
-                          className="px-2 py-1 rounded-md border text-red-600 hover:bg-red-50"
-                          title="Delete"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </li>
-                  ))
-                ) : (
-                  <li className="text-gray-500 text-sm">No open-ended questions yet.</li>
-                )}
+                        className="px-2 py-1 rounded-md border text-red-600"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
               </ul>
             </div>
           </div>
         )}
 
-        {/* Save bar */}
-        <div className="mt-8 flex items-center gap-3">
+        {/* Save Button */}
+        <div className="mt-8">
           <button
             onClick={saveAll}
             className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md"
           >
             Save Changes
           </button>
-          <span className="text-sm text-gray-500">
-            This saves rated + open-ended questions for this event.
-          </span>
         </div>
       </div>
+
+      {/* ⭐ SUCCESS MODAL (same style as Archive Event modal) */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 backdrop-blur-sm z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-96 p-6 text-center">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4">
+              Saved Successfully!
+            </h3>
+
+            <p className="text-gray-600 mb-6">
+              The questions for <span className="font-medium">{eventName}</span> were updated.
+            </p>
+
+            <button
+              onClick={() => setShowSuccessModal(false)}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

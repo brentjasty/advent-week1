@@ -1,4 +1,3 @@
-// src/pages/Dashboard.js
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
@@ -10,6 +9,7 @@ import {
   where,
   onSnapshot,
   limit,
+  orderBy,
   updateDoc,
   doc,
 } from "firebase/firestore";
@@ -20,49 +20,76 @@ export default function Dashboard() {
 
   const [stats, setStats] = useState({
     feedbacks: 0,
-    checkins: 0,
-    valid: 0,
-    invalid: 0,
     events: 0,
+    attendanceTotal: 0,
+    validated: 0,
+    invalidated: 0,
   });
 
   const [currentEvent, setCurrentEvent] = useState(null);
   const [toggling, setToggling] = useState(false);
 
-  // Counts (feedbacks / events / check-ins)
+  // ✅ Fetch feedback & event counts once
   useEffect(() => {
     (async () => {
       try {
         const feedbackSnap = await getCountFromServer(collection(db, "feedbacks"));
         const eventsSnap = await getCountFromServer(collection(db, "events"));
-        const checkinSnap = await getCountFromServer(collection(db, "checkins"));
-        const validSnap = await getCountFromServer(
-          query(collection(db, "checkins"), where("valid", "==", true))
-        );
-        const invalidSnap = await getCountFromServer(
-          query(collection(db, "checkins"), where("valid", "==", false))
-        );
-
-        setStats({
+        setStats((prev) => ({
+          ...prev,
           feedbacks: feedbackSnap.data().count,
           events: eventsSnap.data().count,
-          checkins: checkinSnap.data().count,
-          valid: validSnap.data().count,
-          invalid: invalidSnap.data().count,
-        });
-      } catch {
-        setStats({ feedbacks: 0, checkins: 0, valid: 0, invalid: 0, events: 0 });
+        }));
+      } catch (err) {
+        console.error("Error loading feedback/events:", err);
       }
     })();
   }, []);
 
-  // Live: current event (isCurrent === true)
+  // ✅ Attendance Logs (total count)
+  useEffect(() => {
+    const qRef = query(collection(db, "attendanceLogs"), orderBy("timestamp", "desc"));
+    const unsub = onSnapshot(qRef, (snap) => {
+      const total = snap.size;
+      setStats((prev) => ({ ...prev, attendanceTotal: total }));
+    });
+    return () => unsub();
+  }, []);
+
+  // ✅ Live Validation Status (validated / invalidated)
+  useEffect(() => {
+    const qRef = query(collection(db, "attendanceLogs"), orderBy("timestamp", "desc"));
+    const unsub = onSnapshot(qRef, (snap) => {
+      const latestMap = new Map();
+
+      snap.docs.forEach((docSnap) => {
+        const data = docSnap.data();
+        const studentID = data.studentID || data.userId || "unknown";
+        if (!latestMap.has(studentID)) {
+          latestMap.set(studentID, data);
+        }
+      });
+
+      const latest = Array.from(latestMap.values());
+      const validated = latest.filter((d) => d.status === "validated").length;
+      const invalidated = latest.filter((d) => d.status !== "validated").length;
+
+      setStats((prev) => ({
+        ...prev,
+        validated,
+        invalidated,
+      }));
+    });
+
+    return () => unsub();
+  }, []);
+
+  // ✅ Current Event
   useEffect(() => {
     const qRef = query(collection(db, "events"), where("isCurrent", "==", true), limit(1));
     const unsub = onSnapshot(qRef, (snap) => {
-      if (snap.empty) {
-        setCurrentEvent(null);
-      } else {
+      if (snap.empty) setCurrentEvent(null);
+      else {
         const d = snap.docs[0];
         setCurrentEvent({ id: d.id, ...d.data() });
       }
@@ -70,6 +97,7 @@ export default function Dashboard() {
     return () => unsub();
   }, []);
 
+  // ✅ Toggle Feedback Form
   const handleToggleFeedback = async () => {
     if (!currentEvent?.id) return;
     const next = !Boolean(currentEvent.feedbackOpen);
@@ -83,6 +111,8 @@ export default function Dashboard() {
         title: next ? "Feedback Form Opened" : "Feedback Form Closed",
         timer: 1400,
         showConfirmButton: false,
+        position: "top-end",
+        toast: true,
       });
     } catch (e) {
       Swal.fire({
@@ -101,17 +131,17 @@ export default function Dashboard() {
 
       <div className="flex-1 p-10 overflow-y-auto">
         <h1 className="text-3xl font-semibold mb-10 text-gray-800">
-          Welcome back, <span className="text-blue-600">Admin!</span>
+          Welcome back, <span className="text-yellow-500">Admin!</span>
         </h1>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Current Event card */}
+          {/* ✅ Current Event */}
           <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg md:col-span-1">
-            <h2 className="text-lg font-medium text-gray-700 mb-2">Current Event</h2>
+            <h2 className="text-lg font-semibold text-gray-800 mb-2">Current Event</h2>
 
             {currentEvent ? (
               <>
-                <p className="text-xl font-bold text-blue-600">
+                <p className="text-xl font-bold text-yellow-500">
                   {currentEvent.title || "Untitled"}
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
@@ -121,77 +151,51 @@ export default function Dashboard() {
                   {currentEvent.date || "Date: TBA"}
                 </p>
 
-                {/* Feedback Open/Close Switch */}
+                {/* ✅ Feedback Toggle */}
                 <div className="mt-5">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-700">
-                        Feedback Form
-                      </p>
+                      <p className="text-sm font-medium text-gray-700">Feedback Form</p>
                       <p className="text-xs text-gray-500">
-                        Toggle to manually {currentEvent.feedbackOpen ? "close" : "open"} the mobile feedback form.
+                        Toggle to manually {currentEvent.feedbackOpen ? "close" : "open"} the mobile
+                        feedback form.
                       </p>
                     </div>
 
-                    {/* Switch */}
                     <button
                       onClick={handleToggleFeedback}
                       disabled={toggling}
-                      className={
-                        "relative inline-flex h-6 w-11 items-center rounded-full transition " +
-                        (currentEvent.feedbackOpen ? "bg-emerald-500" : "bg-gray-300") +
-                        (toggling ? " opacity-70 cursor-not-allowed" : " hover:brightness-95")
-                      }
-                      title={currentEvent.feedbackOpen ? "Close feedback" : "Open feedback"}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                        currentEvent.feedbackOpen ? "bg-yellow-500" : "bg-gray-300"
+                      } ${toggling ? "opacity-70 cursor-not-allowed" : "hover:brightness-95"}`}
                     >
                       <span
-                        className={
-                          "inline-block h-5 w-5 transform rounded-full bg-white shadow transition " +
-                          (currentEvent.feedbackOpen ? "translate-x-5" : "translate-x-1")
-                        }
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
+                          currentEvent.feedbackOpen ? "translate-x-5" : "translate-x-1"
+                        }`}
                       />
                     </button>
                   </div>
 
-                  {/* Current state pill */}
                   <div className="mt-3">
                     <span
-                      className={
-                        "inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold " +
-                        (currentEvent.feedbackOpen
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-gray-100 text-gray-700")
-                      }
+                      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${
+                        currentEvent.feedbackOpen
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-gray-100 text-gray-700"
+                      }`}
                     >
                       <span
-                        className={
-                          "h-2 w-2 rounded-full " +
-                          (currentEvent.feedbackOpen ? "bg-emerald-500" : "bg-gray-400")
-                        }
+                        className={`h-2 w-2 rounded-full ${
+                          currentEvent.feedbackOpen ? "bg-yellow-500" : "bg-gray-400"
+                        }`}
                       />
                       {currentEvent.feedbackOpen ? "OPEN" : "CLOSED"}
                     </span>
                   </div>
                 </div>
 
-                <div className="mt-5 flex gap-2">
-                  <button
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md text-sm"
-                    onClick={() =>
-                      navigate(`/admin/event-feedbacks/${currentEvent.id}`, {
-                        state: { eventName: currentEvent.title || "Event" },
-                      })
-                    }
-                  >
-                    View Feedbacks
-                  </button>
-                  <button
-                    className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded-md text-sm"
-                    onClick={() => navigate("/admin/manage-events")}
-                  >
-                    Manage Events
-                  </button>
-                </div>
+                {/* ❌ Buttons removed here */}
               </>
             ) : (
               <p className="text-gray-500">
@@ -201,38 +205,65 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Total Feedback */}
+          {/* ✅ Total Feedback */}
           <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg">
-            <h2 className="text-lg font-medium text-gray-700 mb-2">Total Feedback</h2>
-            <p className="text-4xl font-bold text-blue-600">{stats.feedbacks}</p>
+            <h2 className="text-lg font-semibold text-gray-800 mb-2">Total Feedback</h2>
+            <p className="text-4xl font-bold text-yellow-500">{stats.feedbacks}</p>
           </div>
 
-          {/* Total Check-ins */}
-          <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg">
-            <h2 className="text-lg font-medium text-gray-700 mb-2">Total Check-ins</h2>
-            <p className="text-4xl font-bold text-blue-600">{stats.checkins}</p>
-          </div>
-
-          {/* Valid Check-ins */}
-          <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg">
-            <h2 className="text-lg font-medium text-gray-700 mb-2">Valid Check-ins</h2>
-            <p className="text-4xl font-bold text-blue-600">{stats.valid}</p>
-          </div>
-
-          {/* Invalid Check-ins */}
-          <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg">
-            <h2 className="text-lg font-medium text-gray-700 mb-2">Invalid Check-ins</h2>
-            <p className="text-4xl font-bold text-blue-600">{stats.invalid}</p>
-          </div>
-
-          {/* Notifications quick action */}
-          <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg">
-            <h2 className="text-lg font-medium text-gray-700 mb-2">Notifications</h2>
+          {/* ✅ Notifications */}
+          <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg flex flex-col justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">Notifications</h2>
+              <p className="text-sm text-gray-500">Send updates or announcements to users.</p>
+            </div>
             <button
-              className="mt-2 w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition"
+              className="mt-4 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 rounded-md shadow-md transition"
               onClick={() => navigate("/admin/notifications")}
             >
               Add Notifications
+            </button>
+          </div>
+
+          {/* ✅ Live Validated */}
+          <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg flex flex-col justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">Validated</h2>
+              <p className="text-4xl font-bold text-yellow-400">{stats.validated}</p>
+            </div>
+            <button
+              onClick={() => navigate("/admin/validated")}
+              className="mt-4 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 rounded-md shadow-md transition"
+            >
+              View Validated
+            </button>
+          </div>
+
+          {/* ✅ Live Invalidated */}
+          <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg flex flex-col justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">Invalidated</h2>
+              <p className="text-4xl font-bold text-yellow-400">{stats.invalidated}</p>
+            </div>
+            <button
+              onClick={() => navigate("/admin/invalidated")}
+              className="mt-4 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 rounded-md shadow-md transition"
+            >
+              View Invalidated
+            </button>
+          </div>
+
+          {/* ✅ Attendance Logs */}
+          <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg flex flex-col justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">Attendance Logs</h2>
+              <p className="text-4xl font-bold text-yellow-500">{stats.attendanceTotal}</p>
+            </div>
+            <button
+              onClick={() => navigate("/admin/attendance-logs")}
+              className="mt-4 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 rounded-md shadow-md transition"
+            >
+              View Logs
             </button>
           </div>
         </div>
