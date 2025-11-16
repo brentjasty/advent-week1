@@ -1,210 +1,192 @@
 // src/pages/ArchivedEvents.js
 import React, { useEffect, useState } from "react";
+import Sidebar from "../components/Sidebar";
 import { db } from "../firebase/firebaseConfig";
 import {
   collection,
   onSnapshot,
-  addDoc,
   deleteDoc,
+  addDoc,
   doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  query,
-  where,
+  setDoc
 } from "firebase/firestore";
-import Sidebar from "../components/Sidebar";
-import Swal from "sweetalert2";
 import { useNavigate } from "react-router-dom";
 
 export default function ArchivedEvents() {
-  const [archivedEvents, setArchivedEvents] = useState([]);
-  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [archived, setArchived] = useState([]);
+  const [notification, setNotification] = useState(null);
+
+  const [showModal, setShowModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [deleteMode, setDeleteMode] = useState(false);
 
   const navigate = useNavigate();
 
-  /* ---------------- LOAD ARCHIVED EVENTS ---------------- */
+  /* LOAD ARCHIVED EVENTS */
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "archived_events"), (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setArchivedEvents(list);
+      setArchived(
+        snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+      );
     });
 
     return () => unsub();
   }, []);
 
-  const openRestoreModal = (event) => {
-    setSelectedEvent(event);
-    setShowRestoreModal(true);
+  /* TOAST */
+  const showToast = (msg) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 2500);
   };
 
-  /* ---------------- FULL RESTORE ----------------
-     Restore:
-      ✔ event data
-      ✔ questions
-      ✔ feedbacks
-      ✔ geofence settings
-      ✔ feedbackOpen state
-  ------------------------------------------------ */
-  const handleRestore = async () => {
-    if (!selectedEvent) return;
+  /* RESTORE EVENT */
+  const handleRestore = (event) => {
+    setSelectedEvent(event);
+    setDeleteMode(false);
+    setShowModal(true);
+  };
 
+  const confirmRestore = async () => {
     try {
-      const eventId = selectedEvent.originalId || selectedEvent.id;
+      const { id, ...eventData } = selectedEvent;
 
-      // Restore Event Document
-      await setDoc(doc(db, "events", eventId), {
-        title: selectedEvent.title,
-        location: selectedEvent.location,
-        description: selectedEvent.description || "",
-        latitude: selectedEvent.latitude,
-        longitude: selectedEvent.longitude,
-        radius: selectedEvent.radius,
-        date: selectedEvent.date,
-        createdAt: selectedEvent.createdAt || new Date(),
-        updatedAt: new Date(),
-        feedbackOpen: selectedEvent.feedbackOpen || false,
-        isCurrent: false,
+      /* STEP 1 — Restore event */
+      const restoredRef = await addDoc(collection(db, "events"), {
+        ...eventData,
+        restoredAt: new Date().toISOString(),
       });
 
-      // Restore Questions
-      if (selectedEvent.event_questions) {
-        await setDoc(doc(db, "event_questions", eventId), {
-          questions: selectedEvent.event_questions.questions || [],
-          openEnded: selectedEvent.event_questions.openEnded || [],
-          createdAt: selectedEvent.event_questions.createdAt || new Date(),
-          updatedAt: new Date(),
+      const newEventId = restoredRef.id;
+
+      /* STEP 2 — Restore Questions */
+      if (eventData.questions && Object.keys(eventData.questions).length > 0) {
+        await setDoc(doc(db, "event_questions", newEventId), {
+          ...eventData.questions,
         });
       }
 
-      /* Restore ALL feedbacks under this event */
-      const archivedFeedbackCollections = [
-        "archived_event_feedbacks",
-        "archived_feedbacks",
-      ];
-
-      for (const colName of archivedFeedbackCollections) {
-        const qRef = query(
-          collection(db, colName),
-          where("eventId", "==", eventId)
-        );
-
-        const snap = await getDocs(qRef);
-        for (const fb of snap.docs) {
+      /* STEP 3 — Restore Feedbacks */
+      if (Array.isArray(eventData.feedbacks)) {
+        for (const fb of eventData.feedbacks) {
+          const { id: oldId, ...fbData } = fb;
           await addDoc(collection(db, "feedbacks"), {
-            ...fb.data(),
-            restoredAt: new Date(),
+            ...fbData,
+            eventId: newEventId,
           });
-          await deleteDoc(doc(db, colName, fb.id));
         }
       }
 
-      // Remove from archive
+      /* STEP 4 — Restore Attendance Logs */
+      if (Array.isArray(eventData.attendanceLogs)) {
+        for (const log of eventData.attendanceLogs) {
+          const { id: oldId, ...logData } = log;
+          await addDoc(collection(db, "attendanceLogs"), {
+            ...logData,
+            eventId: newEventId,
+          });
+        }
+      }
+
+      /* Delete archived record */
       await deleteDoc(doc(db, "archived_events", selectedEvent.id));
 
-      Swal.fire({
-        icon: "success",
-        title: "Event Restored",
-        text: "Event, questions, and feedbacks restored successfully!",
-        timer: 1500,
-        showConfirmButton: false,
-        position: "top-end",
-      });
-
-      setShowRestoreModal(false);
-      setSelectedEvent(null);
-    } catch (err) {
-      console.error("RESTORE FAILED:", err);
-      Swal.fire("Error", "Failed to restore event", "error");
+      showToast("Event restored successfully!");
+    } catch (error) {
+      console.error("Restore error:", error);
+      showToast("Error restoring event.");
     }
+
+    setSelectedEvent(null);
+    setShowModal(false);
   };
 
-  /* ---------------- DELETE ARCHIVED EVENT ---------------- */
-  const handleDeleteArchive = async (id) => {
-    const confirm = await Swal.fire({
-      title: "Delete Archived Event?",
-      text: "This cannot be undone.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#d33",
-      cancelButtonColor: "#3085d6",
-      confirmButtonText: "Delete",
-      position: "top-end",
-    });
+  /* DELETE ARCHIVED EVENT */
+  const handleDelete = (event) => {
+    setSelectedEvent(event);
+    setDeleteMode(true);
+    setShowModal(true);
+  };
 
-    if (!confirm.isConfirmed) return;
-
+  const confirmDelete = async () => {
     try {
-      await deleteDoc(doc(db, "archived_events", id));
-      Swal.fire("Deleted", "Archived event removed", "success");
-    } catch (err) {
-      console.error("Delete failed:", err);
-      Swal.fire("Error", "Failed to delete archived event", "error");
+      await deleteDoc(doc(db, "archived_events", selectedEvent.id));
+      showToast("Event permanently deleted!");
+    } catch (error) {
+      console.error("Delete error:", error);
+      showToast("Error deleting event.");
     }
+
+    setSelectedEvent(null);
+    setShowModal(false);
   };
 
-  /* ---------------- VIEW FEEDBACKS (REDIRECT TO PAGE) ---------------- */
-  const handleViewFeedbacks = (id, title) => {
-    navigate(`/admin/archived-feedbacks/${id}`, {
-      state: { eventName: title },
-    });
-  };
-
-  /* ----------------------------------- UI ----------------------------------- */
+  /* UI */
   return (
-    <div className="flex h-screen bg-gray-100 font-poppins">
+    <div className="flex min-h-screen bg-gray-100 font-poppins">
       <Sidebar />
 
-      <div className="flex-1 p-10 overflow-y-auto">
-        <h2 className="text-3xl font-semibold text-gray-800 mb-8">
+      <div className="flex-1 p-6 md:p-10 overflow-y-auto relative">
+
+        <h2 className="text-3xl font-semibold text-gray-800 mb-6">
           Archived Events
         </h2>
 
-        <div className="bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-200">
-          <table className="min-w-full text-left">
+        {notification && (
+          <div className="fixed top-6 right-6 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium z-50">
+            {notification}
+          </div>
+        )}
+
+        <div className="bg-white shadow-xl rounded-2xl border overflow-x-auto">
+          <table className="min-w-full text-left text-sm md:text-base">
             <thead className="bg-gray-800 text-gray-100">
               <tr>
                 <th className="px-6 py-3">Title</th>
                 <th className="px-6 py-3">Location</th>
                 <th className="px-6 py-3">Date</th>
+                <th className="px-6 py-3">Archived At</th>
                 <th className="px-6 py-3 text-center">Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {archivedEvents.length > 0 ? (
-                archivedEvents.map((ev) => (
-                  <tr key={ev.id} className="border-b hover:bg-gray-50">
+              {archived.length > 0 ? (
+                archived.map((ev) => (
+                  <tr
+                    key={ev.id}
+                    className="border-b border-gray-200 hover:bg-gray-50 transition"
+                  >
                     <td className="px-6 py-4">{ev.title}</td>
                     <td className="px-6 py-4">{ev.location}</td>
                     <td className="px-6 py-4">{ev.date}</td>
+                    <td className="px-6 py-4 text-gray-600">
+                      {ev.archivedAt
+                        ? new Date(ev.archivedAt).toLocaleString()
+                        : "—"}
+                    </td>
 
                     <td className="px-6 py-4">
-                      <div className="flex justify-center gap-2">
-                        {/* RESTORE */}
+                      <div className="flex flex-wrap justify-center gap-2">
+
+                        {/* RESTORE BUTTON (YELLOW) */}
                         <button
-                          onClick={() => openRestoreModal(ev)}
-                          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-md text-sm"
+                          onClick={() => handleRestore(ev)}
+                          className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 px-3 py-1 rounded-md text-xs md:text-sm"
                         >
                           Restore
                         </button>
 
-                        {/* VIEW FEEDBACKS */}
+                        {/* DELETE BUTTON (RED) */}
                         <button
-                          onClick={() => handleViewFeedbacks(ev.id, ev.title)}
-                          className="bg-gray-700 hover:bg-gray-900 text-white px-3 py-1 rounded-md text-sm"
-                        >
-                          View Feedbacks
-                        </button>
-
-                        {/* DELETE */}
-                        <button
-                          onClick={() => handleDeleteArchive(ev.id)}
-                          className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm"
+                          onClick={() => handleDelete(ev)}
+                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-xs md:text-sm"
                         >
                           Delete
                         </button>
+
                       </div>
                     </td>
                   </tr>
@@ -212,10 +194,10 @@ export default function ArchivedEvents() {
               ) : (
                 <tr>
                   <td
-                    colSpan="4"
-                    className="text-center py-6 text-gray-500 bg-white"
+                    colSpan="5"
+                    className="px-6 py-8 text-center text-gray-500 bg-white"
                   >
-                    No archived events available.
+                    No archived events.
                   </td>
                 </tr>
               )}
@@ -224,29 +206,37 @@ export default function ArchivedEvents() {
         </div>
       </div>
 
-      {/* RESTORE MODAL */}
-      {showRestoreModal && selectedEvent && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl shadow-xl w-96">
-            <h3 className="text-xl font-semibold mb-4">Restore Event</h3>
+      {/* MODAL */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
+          <div className="bg-white rounded-xl shadow-xl w-80 md:w-96 p-6 text-center">
+            <h3 className="text-xl font-semibold text-gray-800 mb-3">
+              {deleteMode ? "Delete Event" : "Restore Event"}
+            </h3>
 
             <p className="text-gray-600 mb-6">
-              Restore{" "}
-              <span className="font-bold">“{selectedEvent.title}”</span> back to
-              active events?
+              Are you sure you want to{" "}
+              <span className="font-semibold text-gray-900">
+                {deleteMode ? "delete" : "restore"}
+              </span>{" "}
+              “{selectedEvent?.title}”?
             </p>
 
             <div className="flex justify-center gap-4">
               <button
-                onClick={handleRestore}
-                className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md"
+                onClick={deleteMode ? confirmDelete : confirmRestore}
+                className={`${
+                  deleteMode
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-blue-600 hover:bg-blue-700"
+                } text-white px-4 py-2 rounded-md`}
               >
-                Restore
+                Confirm
               </button>
 
               <button
-                onClick={() => setShowRestoreModal(false)}
-                className="bg-gray-300 hover:bg-gray-400 px-4 py-2 rounded-md"
+                onClick={() => setShowModal(false)}
+                className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-md"
               >
                 Cancel
               </button>

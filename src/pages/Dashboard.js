@@ -20,7 +20,6 @@ export default function Dashboard() {
 
   const [stats, setStats] = useState({
     feedbacks: 0,
-    events: 0,
     attendanceTotal: 0,
     validated: 0,
     invalidated: 0,
@@ -29,50 +28,86 @@ export default function Dashboard() {
   const [currentEvent, setCurrentEvent] = useState(null);
   const [toggling, setToggling] = useState(false);
 
-  // ✅ Fetch feedback & event counts once
+  /* ---------------------------------------------
+      GET CURRENT EVENT
+  --------------------------------------------- */
   useEffect(() => {
-    (async () => {
-      try {
-        const feedbackSnap = await getCountFromServer(collection(db, "feedbacks"));
-        const eventsSnap = await getCountFromServer(collection(db, "events"));
-        setStats((prev) => ({
-          ...prev,
-          feedbacks: feedbackSnap.data().count,
-          events: eventsSnap.data().count,
-        }));
-      } catch (err) {
-        console.error("Error loading feedback/events:", err);
-      }
-    })();
-  }, []);
+    const qRef = query(
+      collection(db, "events"),
+      where("isCurrent", "==", true),
+      limit(1)
+    );
 
-  // ✅ Attendance Logs (total count)
-  useEffect(() => {
-    const qRef = query(collection(db, "attendanceLogs"), orderBy("timestamp", "desc"));
     const unsub = onSnapshot(qRef, (snap) => {
-      const total = snap.size;
-      setStats((prev) => ({ ...prev, attendanceTotal: total }));
+      if (snap.empty) setCurrentEvent(null);
+      else {
+        const d = snap.docs[0];
+        setCurrentEvent({ id: d.id, ...d.data() });
+      }
     });
+
     return () => unsub();
   }, []);
 
-  // ✅ Live Validation Status (validated / invalidated)
+  /* ---------------------------------------------
+      LOAD STATS PER EVENT
+  --------------------------------------------- */
   useEffect(() => {
-    const qRef = query(collection(db, "attendanceLogs"), orderBy("timestamp", "desc"));
-    const unsub = onSnapshot(qRef, (snap) => {
+    if (!currentEvent?.id) return;
+
+    /* -------- FEEDBACK COUNT PER EVENT -------- */
+    (async () => {
+      try {
+        const feedbackSnap = await getCountFromServer(
+          query(
+            collection(db, "feedbacks"),
+            where("eventId", "==", currentEvent.id)
+          )
+        );
+
+        setStats((prev) => ({
+          ...prev,
+          feedbacks: feedbackSnap.data().count,
+        }));
+      } catch (err) {
+        console.error("Error loading feedback count:", err);
+      }
+    })();
+
+    /* -------- ATTENDANCE PER EVENT -------- */
+    const logQuery = query(
+      collection(db, "attendanceLogs"),
+      where("eventId", "==", currentEvent.id),
+      orderBy("timestamp", "desc")
+    );
+
+    const unsub1 = onSnapshot(logQuery, (snap) => {
+      setStats((prev) => ({
+        ...prev,
+        attendanceTotal: snap.size,
+      }));
+    });
+
+    /* -------- VALIDATED / INVALIDATED PER EVENT -------- */
+    const unsub2 = onSnapshot(logQuery, (snap) => {
       const latestMap = new Map();
 
       snap.docs.forEach((docSnap) => {
         const data = docSnap.data();
         const studentID = data.studentID || data.userId || "unknown";
+
         if (!latestMap.has(studentID)) {
           latestMap.set(studentID, data);
         }
       });
 
       const latest = Array.from(latestMap.values());
-      const validated = latest.filter((d) => d.status === "validated").length;
-      const invalidated = latest.filter((d) => d.status !== "validated").length;
+      const validated = latest.filter(
+        (d) => d.status === "validated"
+      ).length;
+      const invalidated = latest.filter(
+        (d) => d.status !== "validated"
+      ).length;
 
       setStats((prev) => ({
         ...prev,
@@ -81,31 +116,25 @@ export default function Dashboard() {
       }));
     });
 
-    return () => unsub();
-  }, []);
+    return () => {
+      unsub1();
+      unsub2();
+    };
+  }, [currentEvent]);
 
-  // ✅ Current Event
-  useEffect(() => {
-    const qRef = query(collection(db, "events"), where("isCurrent", "==", true), limit(1));
-    const unsub = onSnapshot(qRef, (snap) => {
-      if (snap.empty) setCurrentEvent(null);
-      else {
-        const d = snap.docs[0];
-        setCurrentEvent({ id: d.id, ...d.data() });
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  // ✅ Toggle Feedback Form
+  /* ---------------------------------------------
+      TOGGLE FEEDBACK FORM
+  --------------------------------------------- */
   const handleToggleFeedback = async () => {
     if (!currentEvent?.id) return;
     const next = !Boolean(currentEvent.feedbackOpen);
     setToggling(true);
+
     try {
       await updateDoc(doc(db, "events", currentEvent.id), {
         feedbackOpen: next,
       });
+
       Swal.fire({
         icon: "success",
         title: next ? "Feedback Form Opened" : "Feedback Form Closed",
@@ -135,30 +164,33 @@ export default function Dashboard() {
         </h1>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* ✅ Current Event */}
+
+          {/* Current Event */}
           <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg md:col-span-1">
-            <h2 className="text-lg font-semibold text-gray-800 mb-2">Current Event</h2>
+            <h2 className="text-lg font-semibold text-gray-800 mb-2">
+              Current Event
+            </h2>
 
             {currentEvent ? (
               <>
                 <p className="text-xl font-bold text-yellow-500">
-                  {currentEvent.title || "Untitled"}
+                  {currentEvent.title}
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
-                  {currentEvent.location ? `@ ${currentEvent.location}` : "Location: TBA"}
+                  @ {currentEvent.location}
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  {currentEvent.date || "Date: TBA"}
+                  {currentEvent.date}
                 </p>
 
-                {/* ✅ Feedback Toggle */}
                 <div className="mt-5">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-700">Feedback Form</p>
+                      <p className="text-sm font-medium text-gray-700">
+                        Feedback Form
+                      </p>
                       <p className="text-xs text-gray-500">
-                        Toggle to manually {currentEvent.feedbackOpen ? "close" : "open"} the mobile
-                        feedback form.
+                        Toggle the mobile feedback form.
                       </p>
                     </div>
 
@@ -166,12 +198,18 @@ export default function Dashboard() {
                       onClick={handleToggleFeedback}
                       disabled={toggling}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                        currentEvent.feedbackOpen ? "bg-yellow-500" : "bg-gray-300"
-                      } ${toggling ? "opacity-70 cursor-not-allowed" : "hover:brightness-95"}`}
+                        currentEvent.feedbackOpen
+                          ? "bg-yellow-500"
+                          : "bg-gray-300"
+                      } ${
+                        toggling ? "opacity-70 cursor-not-allowed" : "hover:brightness-95"
+                      }`}
                     >
                       <span
                         className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
-                          currentEvent.feedbackOpen ? "translate-x-5" : "translate-x-1"
+                          currentEvent.feedbackOpen
+                            ? "translate-x-5"
+                            : "translate-x-1"
                         }`}
                       />
                     </button>
@@ -187,35 +225,43 @@ export default function Dashboard() {
                     >
                       <span
                         className={`h-2 w-2 rounded-full ${
-                          currentEvent.feedbackOpen ? "bg-yellow-500" : "bg-gray-400"
+                          currentEvent.feedbackOpen
+                            ? "bg-yellow-500"
+                            : "bg-gray-400"
                         }`}
                       />
                       {currentEvent.feedbackOpen ? "OPEN" : "CLOSED"}
                     </span>
                   </div>
                 </div>
-
-                {/* ❌ Buttons removed here */}
               </>
             ) : (
               <p className="text-gray-500">
-                No current event selected. Set one in{" "}
+                No current event. Set one in{" "}
                 <span className="font-semibold">Manage Events</span>.
               </p>
             )}
           </div>
 
-          {/* ✅ Total Feedback */}
+          {/* Total Feedback */}
           <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg">
-            <h2 className="text-lg font-semibold text-gray-800 mb-2">Total Feedback</h2>
-            <p className="text-4xl font-bold text-yellow-500">{stats.feedbacks}</p>
+            <h2 className="text-lg font-semibold text-gray-800 mb-2">
+              Total Feedback
+            </h2>
+            <p className="text-4xl font-bold text-yellow-500">
+              {stats.feedbacks}
+            </p>
           </div>
 
-          {/* ✅ Notifications */}
+          {/* Notifications */}
           <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg flex flex-col justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-800 mb-2">Notifications</h2>
-              <p className="text-sm text-gray-500">Send updates or announcements to users.</p>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">
+                Notifications
+              </h2>
+              <p className="text-sm text-gray-500">
+                Send updates or announcements.
+              </p>
             </div>
             <button
               className="mt-4 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 rounded-md shadow-md transition"
@@ -225,11 +271,15 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* ✅ Live Validated */}
+          {/* Validated */}
           <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg flex flex-col justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-800 mb-2">Validated</h2>
-              <p className="text-4xl font-bold text-yellow-400">{stats.validated}</p>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">
+                Validated
+              </h2>
+              <p className="text-4xl font-bold text-yellow-400">
+                {stats.validated}
+              </p>
             </div>
             <button
               onClick={() => navigate("/admin/validated")}
@@ -239,11 +289,15 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* ✅ Live Invalidated */}
+          {/* Invalidated */}
           <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg flex flex-col justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-800 mb-2">Invalidated</h2>
-              <p className="text-4xl font-bold text-yellow-400">{stats.invalidated}</p>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">
+                Invalidated
+              </h2>
+              <p className="text-4xl font-bold text-yellow-400">
+                {stats.invalidated}
+              </p>
             </div>
             <button
               onClick={() => navigate("/admin/invalidated")}
@@ -253,11 +307,15 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* ✅ Attendance Logs */}
+          {/* Attendance Logs */}
           <div className="bg-white rounded-xl shadow-md p-6 transition hover:shadow-lg flex flex-col justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-800 mb-2">Attendance Logs</h2>
-              <p className="text-4xl font-bold text-yellow-500">{stats.attendanceTotal}</p>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">
+                Attendance Logs
+              </h2>
+              <p className="text-4xl font-bold text-yellow-500">
+                {stats.attendanceTotal}
+              </p>
             </div>
             <button
               onClick={() => navigate("/admin/attendance-logs")}
@@ -266,6 +324,7 @@ export default function Dashboard() {
               View Logs
             </button>
           </div>
+
         </div>
       </div>
     </div>

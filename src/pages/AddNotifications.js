@@ -23,20 +23,22 @@ export default function AddNotifications() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
 
-  // Modal State
+  // Modal + callback fix
   const [modal, setModal] = useState({
     open: false,
     type: "",
     message: "",
-    onConfirm: null,
   });
+  const [pendingAction, setPendingAction] = useState(null);
 
   const openModal = (type, message, onConfirm = null) => {
-    setModal({ open: true, type, message, onConfirm });
+    setModal({ open: true, type, message });
+    setPendingAction(() => onConfirm);
   };
 
   const closeModal = () => {
-    setModal({ open: false, type: "", message: "", onConfirm: null });
+    setModal({ open: false, type: "", message: "" });
+    setPendingAction(null);
   };
 
   const notifications = useMemo(() => {
@@ -51,7 +53,7 @@ export default function AddNotifications() {
     });
   }, [selectedDoc]);
 
-  /* Load events */
+  /* Load Events */
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "events"), (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -64,20 +66,23 @@ export default function AddNotifications() {
         setSelectedId(currentEvent ? currentEvent.id : list[0]?.id || "");
       }
     });
+
     return () => unsub();
   }, [selectedId]);
 
-  /* Load selected event live */
+  /* Load Selected Event */
   useEffect(() => {
     if (!selectedId) return;
+
     const ref = doc(db, "events", selectedId);
     const unsub = onSnapshot(ref, (snap) =>
       setSelectedDoc({ id: snap.id, ...snap.data() })
     );
+
     return () => unsub();
   }, [selectedId]);
 
-  /* ---------------- ADD NOTIFICATION ---------------- */
+  /* ADD NOTIFICATION */
   const confirmAdd = async () => {
     if (!selectedId) return;
 
@@ -91,18 +96,12 @@ export default function AddNotifications() {
 
     try {
       await updateDoc(ref, { notifications: arrayUnion(payload) });
-    } catch (fallback) {
-      // Safe fallback
+    } catch {
       const snap = await getDoc(ref);
       const arr = Array.isArray(snap.data()?.notifications)
         ? snap.data().notifications
         : [];
-
-      await setDoc(
-        ref,
-        { notifications: [...arr, payload] },
-        { merge: true }
-      );
+      await setDoc(ref, { notifications: [...arr, payload] }, { merge: true });
     }
 
     setTitle("");
@@ -110,6 +109,7 @@ export default function AddNotifications() {
     closeModal();
   };
 
+  /* Add button */
   const handleAdd = (e) => {
     e.preventDefault();
 
@@ -117,15 +117,16 @@ export default function AddNotifications() {
       openModal("warning", "Select an event first.");
       return;
     }
+
     if (!title.trim() && !body.trim()) {
-      openModal("warning", "Please enter a subject or message.");
+      openModal("warning", "Please enter a message.");
       return;
     }
 
     openModal("confirm", "Add this notification?", confirmAdd);
   };
 
-  /* ---------------- DELETE NOTIFICATION ---------------- */
+  /* DELETE SINGLE */
   const confirmDelete = async (index) => {
     const ref = doc(db, "events", selectedId);
     const snap = await getDoc(ref);
@@ -137,17 +138,15 @@ export default function AddNotifications() {
     const next = arr.filter((_, i) => i !== index);
 
     await updateDoc(ref, { notifications: next });
-
     closeModal();
   };
 
-  const handleDelete = (index) => {
+  const handleDelete = (index) =>
     openModal("delete", "Delete this notification?", () =>
       confirmDelete(index)
     );
-  };
 
-  /* ---------------- CLEAR ALL ---------------- */
+  /* CLEAR ALL */
   const confirmClearAll = async () => {
     await updateDoc(doc(db, "events", selectedId), { notifications: [] });
     closeModal();
@@ -155,18 +154,22 @@ export default function AddNotifications() {
 
   const handleClearAll = () => {
     if (!selectedId || notifications.length === 0) return;
-
     openModal("delete", "Clear ALL notifications?", confirmClearAll);
   };
 
+  /* UI */
   return (
     <div className="flex h-screen bg-gray-100 font-poppins">
       <Sidebar />
+
       <div className="flex-1 p-8 overflow-y-auto">
+
+        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-semibold text-gray-800">
             Add Notifications
           </h1>
+
           <button
             onClick={() => navigate("/admin/dashboard")}
             className="px-4 py-2 rounded-md border bg-white hover:bg-gray-100 text-gray-700"
@@ -194,6 +197,7 @@ export default function AddNotifications() {
             <option value="" disabled>
               -- Select an event --
             </option>
+
             {events.map((ev) => (
               <option key={ev.id} value={ev.id}>
                 {ev.title} {ev.isCurrent ? "• (Current)" : ""}
@@ -202,7 +206,7 @@ export default function AddNotifications() {
           </select>
         </div>
 
-        {/* Add Notification Form */}
+        {/* Add Notification */}
         <form onSubmit={handleAdd} className="bg-white rounded-xl shadow p-5">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">
             Create Notification
@@ -223,7 +227,6 @@ export default function AddNotifications() {
               value={body}
               onChange={(e) => setBody(e.target.value)}
               className="border rounded-md px-3 py-2 md:col-span-2"
-              required
             />
           </div>
 
@@ -247,7 +250,7 @@ export default function AddNotifications() {
           </div>
         </form>
 
-        {/* Existing notifications */}
+        {/* Existing Notifications */}
         <div className="bg-white rounded-xl shadow p-5 mt-5">
           <h2 className="text-lg font-semibold text-gray-800 mb-3">
             Existing Notifications
@@ -269,6 +272,7 @@ export default function AddNotifications() {
                       <p className="font-semibold text-gray-800">{n.title}</p>
                     )}
                     <p className="text-gray-700">{n.body}</p>
+
                     <p className="text-xs text-gray-400 mt-1">
                       {new Date(n.createdAt).toLocaleString()}
                     </p>
@@ -287,10 +291,11 @@ export default function AddNotifications() {
         </div>
       </div>
 
-      {/* CUSTOM MODAL COMPONENT */}
+      {/* Modal */}
       {modal.open && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-2xl w-96 p-6 text-center">
+
             <h3 className="text-xl font-semibold text-gray-800 mb-4">
               {modal.type === "confirm"
                 ? "Confirm Action"
@@ -299,12 +304,14 @@ export default function AddNotifications() {
                 : "Notice"}
             </h3>
 
-            <p className="text-gray-600 mb-6">{modal.message}</p>
+            <p className="text-gray-600 mb-6 whitespace-pre-line">
+              {modal.message}
+            </p>
 
             <div className="flex justify-center gap-4">
-              {modal.type !== "warning" && modal.onConfirm && (
+              {modal.type !== "warning" && pendingAction && (
                 <button
-                  onClick={modal.onConfirm}
+                  onClick={() => pendingAction()}
                   className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium px-4 py-2 rounded-md"
                 >
                   Confirm
@@ -318,9 +325,11 @@ export default function AddNotifications() {
                 {modal.type === "warning" ? "Okay" : "Cancel"}
               </button>
             </div>
+
           </div>
         </div>
       )}
+
     </div>
   );
 }
