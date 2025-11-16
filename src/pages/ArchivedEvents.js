@@ -8,9 +8,8 @@ import {
   deleteDoc,
   addDoc,
   doc,
-  setDoc
+  setDoc,
 } from "firebase/firestore";
-import { useNavigate } from "react-router-dom";
 
 export default function ArchivedEvents() {
   const [archived, setArchived] = useState([]);
@@ -19,8 +18,6 @@ export default function ArchivedEvents() {
   const [showModal, setShowModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [deleteMode, setDeleteMode] = useState(false);
-
-  const navigate = useNavigate();
 
   /* LOAD ARCHIVED EVENTS */
   useEffect(() => {
@@ -42,18 +39,19 @@ export default function ArchivedEvents() {
     setTimeout(() => setNotification(null), 2500);
   };
 
-  /* RESTORE EVENT */
+  /* OPEN RESTORE MODAL */
   const handleRestore = (event) => {
     setSelectedEvent(event);
     setDeleteMode(false);
     setShowModal(true);
   };
 
+  /* RESTORE LOGIC */
   const confirmRestore = async () => {
     try {
       const { id, ...eventData } = selectedEvent;
 
-      /* STEP 1 — Restore event */
+      // STEP 1 — Restore the event to "events"
       const restoredRef = await addDoc(collection(db, "events"), {
         ...eventData,
         restoredAt: new Date().toISOString(),
@@ -61,14 +59,14 @@ export default function ArchivedEvents() {
 
       const newEventId = restoredRef.id;
 
-      /* STEP 2 — Restore Questions */
+      // STEP 2 — Restore event questions
       if (eventData.questions && Object.keys(eventData.questions).length > 0) {
         await setDoc(doc(db, "event_questions", newEventId), {
           ...eventData.questions,
         });
       }
 
-      /* STEP 3 — Restore Feedbacks */
+      // STEP 3 — Restore feedbacks
       if (Array.isArray(eventData.feedbacks)) {
         for (const fb of eventData.feedbacks) {
           const { id: oldId, ...fbData } = fb;
@@ -79,7 +77,7 @@ export default function ArchivedEvents() {
         }
       }
 
-      /* STEP 4 — Restore Attendance Logs */
+      // STEP 4 — Restore attendance logs
       if (Array.isArray(eventData.attendanceLogs)) {
         for (const log of eventData.attendanceLogs) {
           const { id: oldId, ...logData } = log;
@@ -90,7 +88,7 @@ export default function ArchivedEvents() {
         }
       }
 
-      /* Delete archived record */
+      // STEP 5 — Delete original archived record
       await deleteDoc(doc(db, "archived_events", selectedEvent.id));
 
       showToast("Event restored successfully!");
@@ -103,7 +101,7 @@ export default function ArchivedEvents() {
     setShowModal(false);
   };
 
-  /* DELETE ARCHIVED EVENT */
+  /* DELETE LOGIC */
   const handleDelete = (event) => {
     setSelectedEvent(event);
     setDeleteMode(true);
@@ -123,13 +121,11 @@ export default function ArchivedEvents() {
     setShowModal(false);
   };
 
-  /* UI */
   return (
     <div className="flex min-h-screen bg-gray-100 font-poppins">
       <Sidebar />
 
       <div className="flex-1 p-6 md:p-10 overflow-y-auto relative">
-
         <h2 className="text-3xl font-semibold text-gray-800 mb-6">
           Archived Events
         </h2>
@@ -170,8 +166,6 @@ export default function ArchivedEvents() {
 
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap justify-center gap-2">
-
-                        {/* RESTORE BUTTON (YELLOW) */}
                         <button
                           onClick={() => handleRestore(ev)}
                           className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 px-3 py-1 rounded-md text-xs md:text-sm"
@@ -179,14 +173,12 @@ export default function ArchivedEvents() {
                           Restore
                         </button>
 
-                        {/* DELETE BUTTON (RED) */}
                         <button
                           onClick={() => handleDelete(ev)}
                           className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-xs md:text-sm"
                         >
                           Delete
                         </button>
-
                       </div>
                     </td>
                   </tr>

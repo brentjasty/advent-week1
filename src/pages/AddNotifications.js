@@ -23,12 +23,8 @@ export default function AddNotifications() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
 
-  // Modal + callback fix
-  const [modal, setModal] = useState({
-    open: false,
-    type: "",
-    message: "",
-  });
+  // Modal + action callback
+  const [modal, setModal] = useState({ open: false, type: "", message: "" });
   const [pendingAction, setPendingAction] = useState(null);
 
   const openModal = (type, message, onConfirm = null) => {
@@ -41,19 +37,22 @@ export default function AddNotifications() {
     setPendingAction(null);
   };
 
+  /* 🔥 FIXED: Notifications include originalIndex for correct delete */
   const notifications = useMemo(() => {
     const arr = Array.isArray(selectedDoc?.notifications)
       ? selectedDoc.notifications
       : [];
 
-    return [...arr].sort((a, b) => {
-      const ta = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const tb = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return tb - ta;
-    });
+    return arr
+      .map((n, index) => ({ ...n, originalIndex: index })) // << FIXED
+      .sort((a, b) => {
+        const ta = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta;
+      });
   }, [selectedDoc]);
 
-  /* Load Events */
+  /* Load events */
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "events"), (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -62,15 +61,15 @@ export default function AddNotifications() {
       setEvents(list);
 
       if (!selectedId) {
-        const currentEvent = list.find((e) => e.isCurrent);
-        setSelectedId(currentEvent ? currentEvent.id : list[0]?.id || "");
+        const current = list.find((e) => e.isCurrent);
+        setSelectedId(current ? current.id : list[0]?.id || "");
       }
     });
 
     return () => unsub();
   }, [selectedId]);
 
-  /* Load Selected Event */
+  /* Load selected event */
   useEffect(() => {
     if (!selectedId) return;
 
@@ -84,8 +83,6 @@ export default function AddNotifications() {
 
   /* ADD NOTIFICATION */
   const confirmAdd = async () => {
-    if (!selectedId) return;
-
     const ref = doc(db, "events", selectedId);
 
     const payload = {
@@ -109,25 +106,20 @@ export default function AddNotifications() {
     closeModal();
   };
 
-  /* Add button */
   const handleAdd = (e) => {
     e.preventDefault();
 
-    if (!selectedId) {
-      openModal("warning", "Select an event first.");
-      return;
-    }
+    if (!selectedId)
+      return openModal("warning", "Select an event first.");
 
-    if (!title.trim() && !body.trim()) {
-      openModal("warning", "Please enter a message.");
-      return;
-    }
+    if (!title.trim() && !body.trim())
+      return openModal("warning", "Please enter a message.");
 
     openModal("confirm", "Add this notification?", confirmAdd);
   };
 
-  /* DELETE SINGLE */
-  const confirmDelete = async (index) => {
+  /* 🔥 FIXED DELETE — uses originalIndex not sorted index */
+  const confirmDelete = async (originalIndex) => {
     const ref = doc(db, "events", selectedId);
     const snap = await getDoc(ref);
 
@@ -135,15 +127,16 @@ export default function AddNotifications() {
       ? snap.data().notifications
       : [];
 
-    const next = arr.filter((_, i) => i !== index);
+    const next = arr.filter((_, idx) => idx !== originalIndex);
 
     await updateDoc(ref, { notifications: next });
+
     closeModal();
   };
 
-  const handleDelete = (index) =>
+  const handleDelete = (originalIndex) =>
     openModal("delete", "Delete this notification?", () =>
-      confirmDelete(index)
+      confirmDelete(originalIndex)
     );
 
   /* CLEAR ALL */
@@ -157,7 +150,7 @@ export default function AddNotifications() {
     openModal("delete", "Clear ALL notifications?", confirmClearAll);
   };
 
-  /* UI */
+  /* UI (UNCHANGED EXACTLY AS YOU WANT) */
   return (
     <div className="flex h-screen bg-gray-100 font-poppins">
       <Sidebar />
@@ -279,7 +272,7 @@ export default function AddNotifications() {
                   </div>
 
                   <button
-                    onClick={() => handleDelete(i)}
+                    onClick={() => handleDelete(n.originalIndex)} // << FIXED
                     className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm"
                   >
                     Delete
@@ -329,7 +322,6 @@ export default function AddNotifications() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
